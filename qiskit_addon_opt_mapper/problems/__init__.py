@@ -31,6 +31,7 @@ Note:
    :toctree: ../stubs/
    :nosignatures:
 
+   BaseOptimizationProblem
    Constraint
    LinearExpression
    LinearConstraint
@@ -44,6 +45,7 @@ Note:
    OptimizationProblem
 """
 
+from .base_optimization_problem import BaseOptimizationProblem
 from .constraint import Constraint
 from .higher_order_constraint import HigherOrderConstraint
 from .higher_order_expression import HigherOrderExpression
@@ -57,6 +59,7 @@ from .quadratic_expression import QuadraticExpression
 from .variable import Variable, VarType
 
 __all__ = [
+    "BaseOptimizationProblem",
     "Constraint",
     "HigherOrderConstraint",
     "HigherOrderExpression",
