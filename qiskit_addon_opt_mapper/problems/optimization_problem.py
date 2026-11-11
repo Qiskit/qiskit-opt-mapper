@@ -32,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 class OptimizationProblem(BaseOptimizationProblem):
-    """Optimization problem representation.
+    """Single-objective optimization problem representation.
 
-    This representation supports inequality and equality constraints,
-    as well as continuous, binary, integer, and spin variables.
+    This representation supports a single objective (minimization or maximization),
+    inequality and equality constraints, as well as continuous, binary, integer,
+    and spin variables.
     """
 
     _objective: OptimizationObjective
