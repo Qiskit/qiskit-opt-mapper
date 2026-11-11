@@ -1,0 +1,14 @@
+---
+features:
+  - |
+    Added :class:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem`, an abstract
+    base class that holds the variables, constraints and other operations of an
+    optimization problem that do not depend on its objective.
+    :class:`~qiskit_addon_opt_mapper.OptimizationProblem` now inherits from it, and its
+    public behavior is unchanged.
+upgrade:
+  - |
+    :class:`~qiskit_addon_opt_mapper.problems.OptimizationProblemElement` now accepts any
+    :class:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem` as its parent.
+    The ``TypeError`` raised for an invalid parent now reads
+    ``BaseOptimizationProblem instance expected``.
