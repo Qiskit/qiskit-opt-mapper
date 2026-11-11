@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -33,6 +33,30 @@ class ObjSense(Enum):
     MINIMIZE = 1
     MAXIMIZE = -1
 
+    @staticmethod
+    def convert(sense: "str | ObjSense") -> "ObjSense":
+        """Convert a string into a corresponding sense of objectives.
+
+        Args:
+            sense: A string or sense of objectives
+
+        Returns:
+            The sense of objectives
+
+        Raises:
+            OptimizationError: if the input string is invalid.
+        """
+        if isinstance(sense, ObjSense):
+            return sense
+        if not isinstance(sense, str):
+            raise OptimizationError(f"Invalid sense: {sense!r}")
+        sense = sense.upper()
+        if sense not in ["MIN", "MINIMIZE", "MAX", "MAXIMIZE"]:
+            raise OptimizationError(f"Invalid sense: {sense}")
+        if sense in ["MIN", "MINIMIZE"]:
+            return ObjSense.MINIMIZE
+        return ObjSense.MAXIMIZE
+
 
 class OptimizationObjective(OptimizationProblemElement):
     """Optimization objective element.
@@ -53,6 +77,7 @@ class OptimizationObjective(OptimizationProblemElement):
         ) = None,
         higher_order: dict[int, CoeffLike] | None = None,
         sense: ObjSense = ObjSense.MINIMIZE,
+        name: str = "",
     ) -> None:
         """Construct an objective with linear, quadratic, and optional higher-order parts.
 
@@ -64,9 +89,12 @@ class OptimizationObjective(OptimizationProblemElement):
             higher_order: A single higher-order expression or a dictionary of {order: coeffs}
                 for multiple orders (k>=3).
             sense: The sense of the objective function (e.g., MINIMIZE, MAXIMIZE).
+            name: The name of the objective function. The default empty string leaves the
+                objective unnamed.
         """
         super().__init__(optimization_problem)
         self._constant = float(constant)
+        self._name = name
 
         if linear is None:
             linear = {}
@@ -172,6 +200,17 @@ class OptimizationObjective(OptimizationProblemElement):
             self._higher_order[k] = HigherOrderExpression(self.optimization_problem, coeffs)
 
     @property
+    def name(self) -> str:
+        """Returns the name of the objective function.
+
+        Returns:
+            The name of the objective function. Empty if the objective is unnamed, which is the
+            default for the single objective of an
+            :class:`~qiskit_addon_opt_mapper.problems.OptimizationProblem`.
+        """
+        return self._name
+
+    @property
     def sense(self) -> ObjSense:
         """Returns the sense of the objective function.
 
@@ -235,29 +274,30 @@ class OptimizationObjective(OptimizationProblemElement):
             g = g + expr.evaluate_gradient(x)
         return cast(ndarray, g)
 
+    def render(self, truncate: int = 0) -> str:
+        """Render the objective as ``"<sense> <expression>"``, with a trailing ``'<name>'`` if named.
+
+        Args:
+            truncate: Passed through to :func:`expr2str`; ``0`` disables truncation.
+
+        Returns:
+            The rendered objective string, e.g. ``"minimize x"`` or ``"minimize x 'cost'"``.
+        """
+        from ..translators.prettyprint import expr2str  # pylint: disable=cyclic-import
+
+        expr_str = expr2str(
+            self.constant, self.linear, self.quadratic, self._higher_order, truncate=truncate
+        )
+        suffix = f" '{self._name}'" if self._name else ""
+        return f"{self._sense.name.lower()} {expr_str}{suffix}"
+
     def __repr__(self):
         """Repr. for OptimizationObjective."""
         # pylint: disable=cyclic-import
-        from ..translators.prettyprint import DEFAULT_TRUNCATE, expr2str
+        from ..translators.prettyprint import DEFAULT_TRUNCATE
 
-        expr_str = expr2str(
-            self.constant,
-            self.linear,
-            self.quadratic,
-            self._higher_order,  # multiple orders
-            truncate=DEFAULT_TRUNCATE,
-        )
-        return f"<{self.__class__.__name__}: {self._sense.name.lower()} {expr_str}>"
+        return f"<{self.__class__.__name__}: {self.render(DEFAULT_TRUNCATE)}>"
 
     def __str__(self):
         """Str. for OptimizationObjective."""
-        # pylint: disable=cyclic-import
-        from ..translators.prettyprint import expr2str
-
-        expr_str = expr2str(
-            self.constant,
-            self.linear,
-            self.quadratic,
-            self._higher_order,  # multiple orders
-        )
-        return f"{self._sense.name.lower()} {expr_str}"
+        return self.render()

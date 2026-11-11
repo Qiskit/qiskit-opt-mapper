@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 # --- adjust imports to your package layout ---
+from qiskit_addon_opt_mapper import OptimizationError
 from qiskit_addon_opt_mapper.problems import (
     ObjSense,
     OptimizationObjective,
@@ -32,6 +33,12 @@ def op3():
     op.integer_var(-10.0, 10.0, "x1")
     op.integer_var(-10.0, 10.0, "x2")
     return op
+
+
+@pytest.fixture
+def obj(op3):
+    """Unnamed objective on op3 with a single linear term."""
+    return OptimizationObjective(optimization_problem=op3, linear={0: 1.0}, sense=ObjSense.MINIMIZE)
 
 
 def test_objective_multiple_higher_orders_eval_and_grad(op3):
@@ -84,3 +91,127 @@ def test_objective_multiple_higher_orders_eval_and_grad(op3):
     )
     g = obj.evaluate_gradient(x)
     assert np.allclose(g, expected_grad)
+
+
+def test_objective_default_name_is_empty(obj):
+    """Default name is the empty string (unnamed objective)."""
+    assert obj.name == ""
+
+
+def test_objective_repr_str_unnamed_unchanged(obj):
+    """repr/str of an unnamed objective are unchanged by the optional name."""
+    assert repr(obj) == "<OptimizationObjective: minimize x0>"
+    assert str(obj) == "minimize x0"
+
+
+def test_objective_name_in_constructor(op3):
+    """A name passed to the constructor is stored and appears as ``'name'`` suffix."""
+    named = OptimizationObjective(
+        optimization_problem=op3, linear={0: 1.0}, sense=ObjSense.MINIMIZE, name="cost"
+    )
+    assert named.name == "cost"
+    assert repr(named) == "<OptimizationObjective: minimize x0 'cost'>"
+    assert str(named) == "minimize x0 'cost'"
+
+
+def test_objective_name_no_setter(op3):
+    """The name property has no setter: assignment raises AttributeError."""
+    named = OptimizationObjective(
+        optimization_problem=op3, linear={0: 1.0}, sense=ObjSense.MINIMIZE, name="cost"
+    )
+    with pytest.raises(AttributeError):
+        named.name = "other"  # type: ignore[misc]
+
+
+def test_obj_sense_convert_min_variants():
+    """ObjSense.convert maps all MINIMIZE spellings correctly."""
+    assert ObjSense.convert("min") is ObjSense.MINIMIZE
+    assert ObjSense.convert("MIN") is ObjSense.MINIMIZE
+    assert ObjSense.convert("Minimize") is ObjSense.MINIMIZE
+    assert ObjSense.convert("minimize") is ObjSense.MINIMIZE
+
+
+def test_obj_sense_convert_max_variants():
+    """ObjSense.convert maps all MAXIMIZE spellings correctly."""
+    assert ObjSense.convert("max") is ObjSense.MAXIMIZE
+    assert ObjSense.convert("MAXIMIZE") is ObjSense.MAXIMIZE
+    assert ObjSense.convert("Maximize") is ObjSense.MAXIMIZE
+    assert ObjSense.convert("maximize") is ObjSense.MAXIMIZE
+
+
+def test_obj_sense_convert_idempotent():
+    """ObjSense.convert is idempotent on ObjSense members."""
+    assert ObjSense.convert(ObjSense.MINIMIZE) is ObjSense.MINIMIZE
+    assert ObjSense.convert(ObjSense.MAXIMIZE) is ObjSense.MAXIMIZE
+
+
+def test_obj_sense_convert_invalid_uppercases_message():
+    """An invalid string raises OptimizationError with the *uppercased* input in the message."""
+    with pytest.raises(OptimizationError, match="MINIMUM"):
+        ObjSense.convert("Minimum")
+
+
+def test_obj_sense_convert_non_string_raises():
+    """A non-string, non-ObjSense argument raises OptimizationError (not AttributeError)."""
+    with pytest.raises(OptimizationError):
+        ObjSense.convert(42)  # type: ignore[arg-type]
+
+
+def test_obj_sense_convert_via_sense_alias():
+    """OptimizationObjective.Sense.convert is reachable, mirroring Constraint.Sense.convert."""
+    assert OptimizationObjective.Sense.convert("max") is ObjSense.MAXIMIZE
+
+
+def test_import_module_does_not_raise():
+    """Importing the module must not raise (guards the quoted annotation on ObjSense.convert)."""
+    import importlib
+
+    import qiskit_addon_opt_mapper.problems.optimization_objective as mod
+
+    importlib.reload(mod)
+
+
+def test_minimize_name_parameter():
+    """minimize(name=...) sets the name and it surfaces in repr/str of the problem."""
+    p = OptimizationProblem()
+    p.binary_var("x")
+    p.minimize(linear={"x": 1}, name="cost")
+    assert p.objective.name == "cost"
+    assert "minimize x 'cost'" in repr(p)
+    assert "minimize x 'cost'" in str(p)
+
+
+def test_maximize_name_parameter():
+    """maximize(name=...) sets the name and it surfaces in repr/str of the problem."""
+    p = OptimizationProblem()
+    p.binary_var("x")
+    p.maximize(linear={"x": 1}, name="profit")
+    assert p.objective.name == "profit"
+    assert "maximize x 'profit'" in repr(p)
+    assert "maximize x 'profit'" in str(p)
+
+
+def test_minimize_positional_args_unchanged(op3):
+    """Positional-argument call sites (converter style) are unaffected by the new name= param."""
+    op3.minimize(0.0, {0: 1.0}, {}, None)
+    assert op3.objective.name == ""
+    assert str(op3.objective) == "minimize x0"
+
+
+def test_render_public_method(op3):
+    """render() is public and produces the same output as str() for unnamed and named objectives."""
+    op3.minimize(linear={0: 1.0})
+    assert op3.objective.render() == str(op3.objective)
+
+    op3.minimize(linear={0: 1.0}, name="cost")
+    assert op3.objective.render() == "minimize x0 'cost'"
+
+
+def test_non_printable_name_warns():
+    """minimize/maximize emit a UserWarning for non-printable objective names."""
+    p = OptimizationProblem()
+    p.binary_var("x")
+    with pytest.warns(UserWarning, match="Objective name is not printable"):
+        p.minimize(linear={"x": 1}, name="bad\nname")
+    with pytest.warns(UserWarning, match="Objective name is not printable"):
+        p.maximize(linear={"x": 1}, name="bad\nname")
