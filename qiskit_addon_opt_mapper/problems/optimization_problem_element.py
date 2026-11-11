@@ -12,19 +12,16 @@
 
 """Interface for all objects that have a parent OptimizationProblem."""
 
-# We import `problems` module not `OptimizationProblem` class
-# to resolve the circular import issue of sphinx.
-# See https://github.com/agronholm/sphinx-autodoc-typehints#dealing-with-circular-imports
+from typing import TYPE_CHECKING
 
-from .. import problems  # pylint: disable=unused-import, cyclic-import
+if TYPE_CHECKING:
+    from .base_optimization_problem import BaseOptimizationProblem
 
 
 class OptimizationProblemElement:
     """Interface class for all objects that have a parent OptimizationProblem."""
 
-    def __init__(
-        self, optimization_problem: "problems.base_optimization_problem.BaseOptimizationProblem"
-    ) -> None:
+    def __init__(self, optimization_problem: "BaseOptimizationProblem") -> None:
         """Initialize object with parent OptimizationProblem.
 
         Args:
@@ -42,7 +39,7 @@ class OptimizationProblemElement:
         self._optimization_problem = optimization_problem
 
     @property
-    def optimization_problem(self) -> "problems.base_optimization_problem.BaseOptimizationProblem":
+    def optimization_problem(self) -> "BaseOptimizationProblem":
         """Returns the parent OptimizationProblem.
 
         Returns:
@@ -51,9 +48,7 @@ class OptimizationProblemElement:
         return self._optimization_problem
 
     @optimization_problem.setter
-    def optimization_problem(
-        self, optimization_problem: "problems.base_optimization_problem.BaseOptimizationProblem"
-    ) -> None:
+    def optimization_problem(self, optimization_problem: "BaseOptimizationProblem") -> None:
         """Sets the parent OptimizationProblem.
 
         Args:
