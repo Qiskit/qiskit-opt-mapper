@@ -107,9 +107,13 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
             problem.objective.linear, problem.objective.quadratic, problem.objective.higher_order
         )
         if problem.objective.sense == problem.objective.Sense.MINIMIZE:
-            self._dst.minimize(problem.objective.constant, obj_lin_dict)  # type: ignore
+            self._dst.minimize(
+                problem.objective.constant, obj_lin_dict, name=problem.objective.name
+            )  # type: ignore
         else:
-            self._dst.maximize(problem.objective.constant, obj_lin_dict)  # type: ignore
+            self._dst.maximize(
+                problem.objective.constant, obj_lin_dict, name=problem.objective.name
+            )  # type: ignore
 
         # 4) Constraints
         for lc in problem.linear_constraints:
