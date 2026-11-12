@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -22,6 +22,8 @@ from qiskit_addon_opt_mapper.problems.optimization_objective import (
 )
 from qiskit_addon_opt_mapper.problems.optimization_problem import OptimizationProblem
 from qiskit_addon_opt_mapper.problems.variable import Variable
+
+from ._coefficient_utils import is_zero_coefficients
 
 if _optionals.HAS_GUROBIPY:
     # pylint: disable=import-error,no-name-in-module
@@ -104,7 +106,7 @@ def to_gurobipy(optimization_problem: OptimizationProblem) -> Model:
     for l_constraint in optimization_problem.linear_constraints:
         name = l_constraint.name
         rhs = l_constraint.rhs
-        if rhs == 0 and l_constraint.linear.coefficients.nnz == 0:
+        if rhs == 0 and is_zero_coefficients(l_constraint.linear.coefficients):
             continue
         linear_expr = LinExpr(0)
         for j, v in l_constraint.linear.to_dict().items():
@@ -126,8 +128,8 @@ def to_gurobipy(optimization_problem: OptimizationProblem) -> Model:
         rhs = q_constraint.rhs
         if (
             rhs == 0
-            and q_constraint.linear.coefficients.nnz == 0
-            and q_constraint.quadratic.coefficients.nnz == 0
+            and is_zero_coefficients(q_constraint.linear.coefficients)
+            and is_zero_coefficients(q_constraint.quadratic.coefficients)
         ):
             continue
         quadratic_expr = QuadExpr(0)
