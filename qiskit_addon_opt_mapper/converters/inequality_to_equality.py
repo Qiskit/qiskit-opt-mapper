@@ -195,9 +195,9 @@ class InequalityToEquality(OptimizationProblemConverter):
         }
 
         if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)  # type: ignore
+            self._dst.minimize(constant, linear, quadratic, ho, name=self._src.objective.name)  # type: ignore
         else:
-            self._dst.maximize(constant, linear, quadratic, ho)  # type: ignore
+            self._dst.maximize(constant, linear, quadratic, ho, name=self._src.objective.name)  # type: ignore
 
         # Add linear constraints
         for lin_const_args in new_linear_constraints:

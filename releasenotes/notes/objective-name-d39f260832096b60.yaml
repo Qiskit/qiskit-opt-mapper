@@ -1,0 +1,16 @@
+---
+features:
+  - |
+    :class:`~qiskit_addon_opt_mapper.problems.OptimizationObjective` now accepts an optional
+    ``name``, available through the new read-only ``name`` property. A named objective is
+    rendered with a trailing ``'<name>'``, for example ``minimize x 'cost'``. The new
+    ``render()`` method returns this string, and ``repr`` and ``str`` of the objective and
+    of the problem use it.
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.minimize` and
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.maximize` accept a new trailing
+    ``name`` argument. A name that is not printable emits a ``UserWarning``.
+  - |
+    Added :meth:`~qiskit_addon_opt_mapper.problems.ObjSense.convert`, which converts the
+    strings ``"min"``, ``"minimize"``, ``"max"`` and ``"maximize"`` (case-insensitive) to
+    the corresponding :class:`~qiskit_addon_opt_mapper.problems.ObjSense`. It raises
+    :class:`~qiskit_addon_opt_mapper.OptimizationError` for any other input.
