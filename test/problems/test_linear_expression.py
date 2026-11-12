@@ -15,35 +15,64 @@
 import numpy as np
 import pytest
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
-from qiskit_addon_opt_mapper.problems import LinearExpression, OptimizationProblem
-from scipy.sparse import dok_array
+from qiskit_addon_opt_mapper.problems import LinearExpression, OptimizationProblem, Representation
+from scipy.sparse import coo_array, csr_array, dok_array
+
+REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+}
 
 
-def MAKE_INSTANCE(coeffs, nvars=4):
+def MAKE_INSTANCE(coeffs, nvars=4, representation=Representation.DENSE):
     """Helper to create LinearExpression instance with a fake OptimizationProblem."""
     op = OptimizationProblem()
     op.binary_var_list(range(nvars))
-    return LinearExpression(optimization_problem=op, coefficients=coeffs)
+    return LinearExpression(
+        optimization_problem=op, coefficients=coeffs, representation=representation
+    )
 
 
 # ---------- happy path ----------
 @pytest.mark.parametrize("as_array", [list, np.array])
-def test_accepts_1d_and_correct_length_for_dense(as_array):
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_1d_and_correct_length_for_dense(as_array, representation):
     n = 4
     coeffs = as_array([1.0, 0.0, -2.5, 3.0])
-    expr = MAKE_INSTANCE(coeffs, nvars=n)
-    assert isinstance(expr.coefficients, dok_array)
-    assert expr.coefficients.shape == (1, n)
+    expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
+    assert expr.coefficients.shape == (n,)
 
 
-def test_accepts_sparse_row_vector_correct_length():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_sparse_row_vector_correct_length(representation):
     n = 4
-    m = dok_array((1, n))
-    m[0, 0] = 1.0
-    m[0, 2] = -2.5
-    expr = MAKE_INSTANCE(m, nvars=n)
-    assert isinstance(expr.coefficients, dok_array)
-    assert expr.coefficients.shape == (1, n)
+    m = dok_array((n,))
+    m[0] = 1.0
+    m[2] = -2.5
+    expr = MAKE_INSTANCE(m, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
+    assert expr.coefficients.shape == (n,)
+
+
+def test_csc_representation_raises():
+    op = OptimizationProblem()
+    op.binary_var_list(range(4))
+    with pytest.raises(OptimizationError):
+        LinearExpression(
+            optimization_problem=op,
+            coefficients=[1.0, 0.0, 0.0, 0.0],
+            representation=Representation.CSC,
+        )
+
+
+def test_dense_to_array_returns_copy():
+    expr = MAKE_INSTANCE([1.0, 2.0, 3.0, 4.0], nvars=4)
+    arr = expr.to_array()
+    arr[0] = 999.0
+    assert expr.coefficients[0] == 1.0
 
 
 # ---------- error cases ----------
@@ -70,14 +99,15 @@ def test_rejects_ndarray_not_1d():
     bad = np.array([[1, 2], [3, 4]])  # 2D
     with pytest.raises(OptimizationError) as e:
         MAKE_INSTANCE(bad, nvars=n)
-    assert "row vector" in str(e.value).lower()
+    assert "one-dimensional" in str(e.value).lower()
 
 
-def test_dot_evaluation_consistency():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_dot_evaluation_consistency(representation):
     n = 4
     coeffs = [1, 2, 3, 4]
-    expr = MAKE_INSTANCE(coeffs, nvars=n)
+    expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
 
-    x = np.array([[1, 1, 1, 1]])  # shape: (1, n)
+    x = np.array([1, 1, 1, 1])
     expected = sum(coeffs)  # 1+2+3+4=10
-    assert expr.evaluate(x[0]) == expected
+    assert expr.evaluate(x) == expected

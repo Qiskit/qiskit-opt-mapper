@@ -1,0 +1,10 @@
+---
+features:
+  - |
+    Added a :class:`~qiskit_addon_opt_mapper.problems.Representation` enum and a
+    ``representation`` constructor argument to
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`, allowing the internal
+    storage format of a linear expression's coefficients to be chosen explicitly
+    (``DENSE``, ``COO``, ``DOK``, or ``CSR``). The chosen representation is exposed
+    via the new read-only ``LinearExpression.representation`` property and is fixed
+    for the lifetime of the object.
