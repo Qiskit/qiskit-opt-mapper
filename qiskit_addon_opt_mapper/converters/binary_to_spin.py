@@ -196,9 +196,9 @@ class BinaryToSpin(OptimizationProblemConverter):
 
         # Dump to dst objective
         if obj.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(c0, ldict, qdict, hdict)
+            self._dst.minimize(c0, ldict, qdict, hdict, name=obj.name)
         else:
-            self._dst.maximize(c0, ldict, qdict, hdict)
+            self._dst.maximize(c0, ldict, qdict, hdict, name=obj.name)
 
     def _emit_constraint_from_poly(self, name: str, sense, rhs: float, poly: Poly) -> None:
         """Emit a constraint to the destination problem from a polynomial form."""

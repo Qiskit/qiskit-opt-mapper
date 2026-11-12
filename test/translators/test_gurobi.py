@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -105,6 +105,18 @@ class TestGurobiTranslator(OptimizationTestCase):
             self.assertDictEqual(c.linear.to_dict(use_name=True), {"C2": -1})
             self.assertDictEqual(c.quadratic.to_dict(use_name=True), {("C0", "C1"): 1})
             self.assertEqual(c.sense, senses[i])
+
+    @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
+    def test_all_zero_constraints_with_rhs_zero_are_skipped(self):
+        """test that all-zero constraints with rhs == 0 are skipped in to_gurobipy"""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var(name="x")
+        q_p.linear_constraint(sense="==", rhs=0.0)
+        q_p.quadratic_constraint(sense="==", rhs=0.0)
+        mod = to_gurobipy(q_p)
+        mod.update()
+        self.assertEqual(mod.NumConstrs, 0)
+        self.assertEqual(mod.NumQConstrs, 0)
 
 
 if __name__ == "__main__":

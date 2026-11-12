@@ -285,9 +285,9 @@ class IntegerToBinary(OptimizationProblemConverter):
             ho.pop(2)
 
         if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)
+            self._dst.minimize(constant, linear, quadratic, ho, name=self._src.objective.name)
         else:
-            self._dst.maximize(constant, linear, quadratic, ho)
+            self._dst.maximize(constant, linear, quadratic, ho, name=self._src.objective.name)
 
         # set linear constraints
         for constraint in self._src.linear_constraints:
