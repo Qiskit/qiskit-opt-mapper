@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -787,3 +787,17 @@ class TestDocplexMpTranslator(OptimizationTestCase):
             right = cst.get_right_expr()
             self.assertTrue(right.is_constant())
             self.assertAlmostEqual(right.constant, 1)
+
+        with self.subTest("all-zero linear constraint with rhs == 0 is skipped"):
+            q_p = OptimizationProblem()
+            q_p.binary_var(name="x")
+            q_p.linear_constraint(sense="==", rhs=0.0)
+            mod = to_docplex_mp(q_p)
+            self.assertEqual(mod.number_of_constraints, 0)
+
+        with self.subTest("all-zero quadratic constraint with rhs == 0 is skipped"):
+            q_p = OptimizationProblem()
+            q_p.binary_var(name="x")
+            q_p.quadratic_constraint(sense="==", rhs=0.0)
+            mod = to_docplex_mp(q_p)
+            self.assertEqual(mod.number_of_constraints, 0)
