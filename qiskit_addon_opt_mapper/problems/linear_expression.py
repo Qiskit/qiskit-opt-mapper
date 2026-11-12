@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from numpy import array, ndarray
-from scipy.sparse import dok_matrix, spmatrix
+from scipy.sparse import dok_array, issparse, sparray, spmatrix
 
 from ..exceptions import OptimizationError
 from ..infinity import INFINITY
@@ -40,13 +40,13 @@ class LinearExpression(OptimizationProblemElement):
     def __init__(
         self,
         optimization_problem: Any,
-        coefficients: ndarray | spmatrix | list[float] | dict[int | str, float],
+        coefficients: ndarray | sparray | spmatrix | list[float] | dict[int | str, float],
     ) -> None:
         """Creates a new linear expression.
 
         The linear expression can be defined via an array, a list, a sparse matrix, or a dictionary
         that uses variable names or indices as keys and stores the values internally as a
-        dok_matrix.
+        dok_array.
 
         Args:
             optimization_problem: The parent OptimizationProblem.
@@ -76,24 +76,24 @@ class LinearExpression(OptimizationProblemElement):
             i = self.optimization_problem.variables_index[i]
         self._coefficients[0, i] = value
 
-    def _coeffs_to_dok_matrix(
-        self, coefficients: ndarray | spmatrix | list | dict[int | str, float]
-    ) -> dok_matrix:
-        """Maps given 1d-coefficients to a dok_matrix.
+    def _coeffs_to_dok_array(
+        self, coefficients: ndarray | sparray | spmatrix | list | dict[int | str, float]
+    ) -> dok_array:
+        """Maps given 1d-coefficients to a dok_array.
 
         Args:
             coefficients: The 1d-coefficients to be mapped.
 
 
         Returns:
-            The given 1d-coefficients as a dok_matrix
+            The given 1d-coefficients as a dok_array
 
         Raises:
             OptimizationError: if coefficients are given in unsupported format.
         """
         if isinstance(coefficients, list):
             # convert list to numpy array first
-            # then check the shape and convert to dok_matrix
+            # then check the shape and convert to dok_array
             coefficients = array(coefficients)
             if (
                 coefficients.ndim != 1
@@ -103,7 +103,7 @@ class LinearExpression(OptimizationProblemElement):
                     "The coefficient list for the linear expression must be one-dimensional and "
                     "length must match the number of variables."
                 )
-            coefficients = dok_matrix([coefficients])
+            coefficients = dok_array([coefficients])
 
         elif isinstance(coefficients, ndarray):
             if (
@@ -114,12 +114,12 @@ class LinearExpression(OptimizationProblemElement):
                     "The coefficient numpy array for the linear expression must be a (1, n) row "
                     "vector with length matching the number of variables."
                 )
-            coefficients = dok_matrix([coefficients])
+            coefficients = dok_array([coefficients])
 
-        elif isinstance(coefficients, spmatrix):
-            coefficients = dok_matrix(coefficients)
+        elif issparse(coefficients):
+            coefficients = dok_array(coefficients)
         elif isinstance(coefficients, dict):
-            coeffs = dok_matrix((1, self.optimization_problem.get_num_vars()))
+            coeffs = dok_array((1, self.optimization_problem.get_num_vars()))
             for index, value in coefficients.items():
                 if isinstance(index, str):
                     index = self.optimization_problem.variables_index[index]
@@ -133,7 +133,7 @@ class LinearExpression(OptimizationProblemElement):
         return coefficients
 
     @property
-    def coefficients(self) -> dok_matrix:
+    def coefficients(self) -> dok_array:
         """Returns the coefficients of the linear expression.
 
         Returns:
@@ -144,14 +144,14 @@ class LinearExpression(OptimizationProblemElement):
     @coefficients.setter
     def coefficients(
         self,
-        coefficients: ndarray | spmatrix | list[float] | dict[int | str, float],
+        coefficients: ndarray | sparray | spmatrix | list[float] | dict[int | str, float],
     ) -> None:
         """Sets the coefficients of the linear expression.
 
         Args:
             coefficients: The coefficients of the linear expression.
         """
-        self._coefficients = self._coeffs_to_dok_matrix(coefficients)
+        self._coefficients = self._coeffs_to_dok_array(coefficients)
 
     def to_array(self) -> ndarray:
         """Returns the coefficients of the linear expression as array.
@@ -190,8 +190,8 @@ class LinearExpression(OptimizationProblemElement):
         Returns:
             The value of the linear expression given the variable values.
         """
-        # cast input to dok_matrix if it is a dictionary
-        x = self._coeffs_to_dok_matrix(x)
+        # cast input to dok_array if it is a dictionary
+        x = self._coeffs_to_dok_array(x)
 
         # compute the dot-product of the input and the linear coefficients
         val = (x @ self.coefficients.transpose())[0, 0]
