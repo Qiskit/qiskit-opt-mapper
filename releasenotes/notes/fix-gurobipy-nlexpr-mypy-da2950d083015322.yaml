@@ -1,0 +1,10 @@
+---
+fixes:
+  - |
+    Fixed :func:`~qiskit_addon_opt_mapper.translators.gurobipy.from_gurobipy` to narrow
+    the type of ``model.getObjective()`` explicitly instead of relying on an
+    unconditional ``else`` branch. Newer versions of ``gurobipy`` type ``getObjective()``
+    as ``LinExpr | QuadExpr | NLExpr``, which both caused mypy to report three
+    ``[assignment]``/``[union-attr]`` errors and meant that a model with a (currently
+    unsupported) nonlinear objective would fail with an opaque ``AttributeError``
+    instead of a clear :class:`~qiskit_addon_opt_mapper.exceptions.OptimizationError`.
