@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -35,6 +35,7 @@ from ..problems.constraint import Constraint
 from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
+from ._coefficient_utils import is_zero_coefficients
 
 
 def to_docplex_mp(quadratic_problem: OptimizationProblem) -> Model:
@@ -104,7 +105,7 @@ def to_docplex_mp(quadratic_problem: OptimizationProblem) -> Model:
     for l_constraint in quadratic_problem.linear_constraints:
         name = l_constraint.name
         rhs = l_constraint.rhs
-        if rhs == 0 and l_constraint.linear.coefficients.nnz == 0:
+        if rhs == 0 and is_zero_coefficients(l_constraint.linear.coefficients):
             continue
         linear_expr = mdl.sum(
             v * var[cast(int, j)] for j, v in l_constraint.linear.to_dict().items()
@@ -126,8 +127,8 @@ def to_docplex_mp(quadratic_problem: OptimizationProblem) -> Model:
         rhs = q_constraint.rhs
         if (
             rhs == 0
-            and q_constraint.linear.coefficients.nnz == 0
-            and q_constraint.quadratic.coefficients.nnz == 0
+            and is_zero_coefficients(q_constraint.linear.coefficients)
+            and is_zero_coefficients(q_constraint.quadratic.coefficients)
         ):
             continue
         quadratic_expr = mdl.sum(
