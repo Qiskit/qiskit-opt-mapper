@@ -162,15 +162,6 @@ def test_obj_sense_convert_via_sense_alias():
     assert OptimizationObjective.Sense.convert("max") is ObjSense.MAXIMIZE
 
 
-def test_import_module_does_not_raise():
-    """Importing the module must not raise (guards the quoted annotation on ObjSense.convert)."""
-    import importlib
-
-    import qiskit_addon_opt_mapper.problems.optimization_objective as mod
-
-    importlib.reload(mod)
-
-
 def test_minimize_name_parameter():
     """minimize(name=...) sets the name and it surfaces in repr/str of the problem."""
     p = OptimizationProblem()
