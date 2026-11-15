@@ -12,6 +12,8 @@
 
 """Optimization Objective."""
 
+from __future__ import annotations
+
 from enum import Enum
 from typing import Any, cast
 
@@ -34,7 +36,7 @@ class ObjSense(Enum):
     MAXIMIZE = -1
 
     @staticmethod
-    def convert(sense: "str | ObjSense") -> "ObjSense":
+    def convert(sense: str | ObjSense) -> ObjSense:
         """Convert a string into a corresponding sense of objectives.
 
         Args:
