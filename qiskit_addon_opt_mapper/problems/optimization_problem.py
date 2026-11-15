@@ -25,7 +25,7 @@ from .base_optimization_problem import (  # noqa: F401
     OptimizationProblemStatus,
 )
 from .constraint import ConstraintSense  # noqa: F401
-from .optimization_objective import OptimizationObjective
+from .optimization_objective import ObjSense, OptimizationObjective
 from .variable import Variable, VarType  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -73,14 +73,8 @@ class OptimizationProblem(BaseOptimizationProblem):
         """
         if name:
             self._check_name(name, "Objective")
-        self._objective = OptimizationObjective(
-            self,
-            constant=constant,
-            linear=linear,
-            quadratic=quadratic,
-            sense=OptimizationObjective.Sense.MINIMIZE,
-            higher_order=higher_order,  # type: ignore
-            name=name,
+        self._set_objective(
+            OptimizationObjective.Sense.MINIMIZE, constant, linear, quadratic, higher_order, name
         )
 
     def maximize(
@@ -106,12 +100,31 @@ class OptimizationProblem(BaseOptimizationProblem):
         """
         if name:
             self._check_name(name, "Objective")
+        self._set_objective(
+            OptimizationObjective.Sense.MAXIMIZE, constant, linear, quadratic, higher_order, name
+        )
+
+    def _set_objective(
+        self,
+        sense: ObjSense,
+        constant: float,
+        linear,
+        quadratic,
+        higher_order,
+        name: str,
+    ) -> None:
+        """Set the objective without checking the name.
+
+        :meth:`minimize` and :meth:`maximize` check the name when the user sets it. Code that
+        copies an already-checked objective, such as the converters, calls this method
+        directly so the check does not run again.
+        """
         self._objective = OptimizationObjective(
             self,
             constant=constant,
             linear=linear,
             quadratic=quadratic,
-            sense=OptimizationObjective.Sense.MAXIMIZE,
+            sense=sense,
             higher_order=higher_order,  # type: ignore
             name=name,
         )

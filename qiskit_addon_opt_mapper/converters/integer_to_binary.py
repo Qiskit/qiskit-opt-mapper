@@ -17,7 +17,6 @@ import copy
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
@@ -284,10 +283,9 @@ class IntegerToBinary(OptimizationProblemConverter):
                     quadratic[(i[0], i[1])] = v
             ho.pop(2)
 
-        if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)
-        else:
-            self._dst.maximize(constant, linear, quadratic, ho)
+        self._dst._set_objective(
+            self._src.objective.sense, constant, linear, quadratic, ho, self._src.objective.name
+        )
 
         # set linear constraints
         for constraint in self._src.linear_constraints:

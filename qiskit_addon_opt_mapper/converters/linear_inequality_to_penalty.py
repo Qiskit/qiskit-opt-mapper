@@ -21,7 +21,6 @@ import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint, ConstraintSense
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
@@ -212,10 +211,9 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
                 ho_constraint.name,
             )
 
-        if problem.objective.sense == OptimizationObjective.Sense.MINIMIZE:  # type: ignore
-            self._dst.minimize(offset, linear, quadratic, ho)  # type: ignore
-        else:
-            self._dst.maximize(offset, linear, quadratic, ho)  # type: ignore
+        self._dst._set_objective(
+            problem.objective.sense, offset, linear, quadratic, ho, problem.objective.name
+        )
 
         # Update the penalty to the one just used
         self._penalty = penalty

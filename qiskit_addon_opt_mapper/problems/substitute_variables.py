@@ -283,20 +283,14 @@ class _SubstituteVariables:
             optimization_problem=self._dst, coefficients=quad if quad else {}
         )
 
-        if obj.sense == obj.sense.MINIMIZE:
-            self._dst.minimize(
-                constant=constant,
-                linear=lin_expr.coefficients,
-                quadratic=quad_expr.coefficients,
-                higher_order=higher if higher else {},
-            )
-        else:
-            self._dst.maximize(
-                constant=constant,
-                linear=lin_expr.coefficients,
-                quadratic=quad_expr.coefficients,
-                higher_order=higher if higher else {},
-            )
+        self._dst._set_objective(
+            obj.sense,
+            constant,
+            lin_expr.coefficients,
+            quad_expr.coefficients,
+            higher if higher else {},
+            obj.name,
+        )
         return True
 
     def _linear_constraints(self) -> bool:

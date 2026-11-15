@@ -183,10 +183,9 @@ class EqualityToPenalty(OptimizationProblemConverter):
         for con in problem.higher_order_constraints:  # type: ignore
             handle_eq_constraint(con)  # type: ignore
 
-        if problem.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(offset, linear, quadratic, ho)  # type: ignore
-        else:
-            self._dst.maximize(offset, linear, quadratic, ho)  # type: ignore
+        self._dst._set_objective(
+            problem.objective.sense, offset, linear, quadratic, ho, problem.objective.name
+        )
 
         # Update the penalty to the one just used
         self._penalty = penalty
