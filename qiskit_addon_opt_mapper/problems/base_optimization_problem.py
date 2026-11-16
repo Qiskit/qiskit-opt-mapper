@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from enum import Enum
 from math import isclose
-from typing import cast
+from typing import TypeAlias, TypeVar, cast
 from warnings import warn
 
 import numpy as np
@@ -30,6 +30,7 @@ from ..infinity import INFINITY
 from .constraint import Constraint, ConstraintSense
 from .higher_order_constraint import HigherOrderConstraint
 from .linear_constraint import LinearConstraint
+from .optimization_objective import ObjSense
 from .optimization_problem_element import OptimizationProblemElement
 from .quadratic_constraint import QuadraticConstraint
 from .variable import Variable, VarType
@@ -38,6 +39,13 @@ logger = logging.getLogger(__name__)
 
 
 CoeffLike = ndarray | dict[tuple[int | str, ...], float] | list
+LinearCoeffLike: TypeAlias = ndarray | spmatrix | list[float] | dict[int | str, float]
+QuadraticCoeffLike: TypeAlias = (
+    ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
+)
+HigherOrderCoeffLike: TypeAlias = dict[int, CoeffLike]
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class OptimizationProblemStatus(Enum):
@@ -57,10 +65,12 @@ class BaseOptimizationProblem(ABC):
     This representation supports inequality and equality constraints,
     as well as continuous, binary, integer, and spin variables.
 
-    Subclasses must implement three hooks: ``_reset_objectives`` (called by ``__init__`` and
-    ``clear``, before any subclass ``__init__`` code runs), ``_objectives_repr`` and
-    ``_objectives_str``. Objective state must be stored in instance attributes, because
-    ``_copy_from`` copies every attribute of the source problem.
+    Subclasses must implement four hooks: ``_reset_objectives`` (called by ``__init__`` and
+    ``clear``, before any subclass ``__init__`` code runs), ``_objectives_repr``,
+    ``_objectives_str`` and ``_append_or_set_objective_from_parts``. Objective state must be
+    stored in instance attributes, because ``_copy_from`` copies every attribute of the source
+    problem. ``__init__`` of a subclass must accept ``name`` as its only required argument,
+    because ``_new_empty`` calls it.
     """
 
     Status = OptimizationProblemStatus
@@ -165,6 +175,42 @@ class BaseOptimizationProblem(ABC):
         Returns:
             A string describing the objective(s).
         """
+
+    @abstractmethod
+    def _append_or_set_objective_from_parts(
+        self,
+        sense: ObjSense,
+        *,
+        constant: float = 0.0,
+        linear: LinearCoeffLike | None = None,
+        quadratic: QuadraticCoeffLike | None = None,
+        higher_order: HigherOrderCoeffLike | None = None,
+        name: str = "",
+    ) -> None:
+        """Adds or sets an objective from its already-assembled parts.
+
+        A subclass with a single objective replaces it, while a subclass with several objectives
+        appends to them. This method does not check ``name``: callers that receive the name from
+        a user, such as ``minimize``, check it first. Callers that copy an objective that was
+        already checked, such as the converters, call this method directly so that the warning
+        for a non-printable name is not repeated.
+
+        Args:
+            sense: The sense of the objective.
+            constant: The constant part of the objective function.
+            linear: The coefficients of the linear part.
+            quadratic: The coefficients of the quadratic part.
+            higher_order: A dictionary of ``{order: coeffs}`` for the higher-order part.
+            name: The name of the objective. The default empty string leaves it unnamed.
+        """
+
+    def _new_empty(self: _T) -> _T:
+        """Creates an empty problem of the same class and with the same name.
+
+        Returns:
+            A new problem without variables, constraints and objectives.
+        """
+        return type(self)(name=self.name)
 
     @property
     def name(self) -> str:

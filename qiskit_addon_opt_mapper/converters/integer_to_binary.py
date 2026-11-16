@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -283,8 +283,13 @@ class IntegerToBinary(OptimizationProblemConverter):
                     quadratic[(i[0], i[1])] = v
             ho.pop(2)
 
-        self._dst._set_objective(
-            self._src.objective.sense, constant, linear, quadratic, ho, self._src.objective.name
+        self._dst._append_or_set_objective_from_parts(
+            self._src.objective.sense,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=ho,
+            name=self._src.objective.name,
         )
 
         # set linear constraints
