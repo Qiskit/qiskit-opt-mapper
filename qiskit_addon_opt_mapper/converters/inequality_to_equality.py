@@ -21,7 +21,6 @@ from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint
 from ..problems.higher_order_constraint import HigherOrderConstraint
 from ..problems.linear_constraint import LinearConstraint
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.quadratic_constraint import QuadraticConstraint
 from ..problems.variable import Variable
@@ -194,10 +193,9 @@ class InequalityToEquality(OptimizationProblemConverter):
             for degree, expr in self._src.objective.higher_order.items()
         }
 
-        if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)  # type: ignore
-        else:
-            self._dst.maximize(constant, linear, quadratic, ho)  # type: ignore
+        self._dst._set_objective(
+            self._src.objective.sense, constant, linear, quadratic, ho, self._src.objective.name
+        )
 
         # Add linear constraints
         for lin_const_args in new_linear_constraints:
