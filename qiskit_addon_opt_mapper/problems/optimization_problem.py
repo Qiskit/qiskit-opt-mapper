@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -58,8 +58,21 @@ class OptimizationProblem(BaseOptimizationProblem):
             ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
         ) = None,
         higher_order: CoeffLike | dict[int, CoeffLike] | None = None,
+        name: str = "",
     ) -> None:
-        """Sets an objective to be minimized."""
+        """Sets an objective to be minimized.
+
+        Args:
+            constant: The constant part of the objective function.
+            linear: The coefficients for the linear part of the objective function.
+            quadratic: The coefficients for the quadratic part of the objective function.
+            higher_order: A single higher-order expression or a dictionary of {order: coeffs}
+                for multiple orders (k>=3).
+            name: The name of the objective function. The default empty string leaves the
+                objective unnamed.
+        """
+        if name:
+            self._check_name(name, "Objective")
         self._objective = OptimizationObjective(
             self,
             constant=constant,
@@ -67,6 +80,7 @@ class OptimizationProblem(BaseOptimizationProblem):
             quadratic=quadratic,
             sense=OptimizationObjective.Sense.MINIMIZE,
             higher_order=higher_order,  # type: ignore
+            name=name,
         )
 
     def maximize(
@@ -77,8 +91,21 @@ class OptimizationProblem(BaseOptimizationProblem):
             ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
         ) = None,
         higher_order: CoeffLike | dict[int, CoeffLike] | None = None,
+        name: str = "",
     ) -> None:
-        """Sets an objective to be maximized."""
+        """Sets an objective to be maximized.
+
+        Args:
+            constant: The constant part of the objective function.
+            linear: The coefficients for the linear part of the objective function.
+            quadratic: The coefficients for the quadratic part of the objective function.
+            higher_order: A single higher-order expression or a dictionary of {order: coeffs}
+                for multiple orders (k>=3).
+            name: The name of the objective function. The default empty string leaves the
+                objective unnamed.
+        """
+        if name:
+            self._check_name(name, "Objective")
         self._objective = OptimizationObjective(
             self,
             constant=constant,
@@ -86,6 +113,7 @@ class OptimizationProblem(BaseOptimizationProblem):
             quadratic=quadratic,
             sense=OptimizationObjective.Sense.MAXIMIZE,
             higher_order=higher_order,  # type: ignore
+            name=name,
         )
 
     def to_ising(self) -> tuple[SparsePauliOp, float]:
@@ -174,17 +202,9 @@ class OptimizationProblem(BaseOptimizationProblem):
             The truncated rendering of the single objective.
         """
         # pylint: disable=cyclic-import
-        from ..translators.prettyprint import DEFAULT_TRUNCATE, expr2str
+        from ..translators.prettyprint import DEFAULT_TRUNCATE
 
-        objective = self._objective
-        expr_str = expr2str(
-            constant=objective.constant,
-            linear=objective.linear,
-            quadratic=objective.quadratic,
-            higher_order=objective.higher_order,
-            truncate=DEFAULT_TRUNCATE,
-        )
-        return f"{objective.sense.name.lower()} {expr_str}"
+        return self._objective.render(DEFAULT_TRUNCATE)
 
     def _objectives_str(self) -> str:
         """Renders the objective fragment of ``__str__``.
@@ -192,4 +212,4 @@ class OptimizationProblem(BaseOptimizationProblem):
         Returns:
             The rendering of the single objective.
         """
-        return str(self._objective)
+        return self._objective.render()
