@@ -32,6 +32,9 @@ class _MissingStrHook(BaseOptimizationProblem):
     def _objectives_repr(self) -> str:
         return ""
 
+    def _append_or_set_objective_from_parts(self, sense, **kwargs) -> None:
+        pass
+
 
 class _MissingFromPartsHook(BaseOptimizationProblem):
     """Subclass that implements all abstract objective hooks except the reconstruction hook."""

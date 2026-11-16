@@ -19,6 +19,7 @@ from qiskit.quantum_info import SparsePauliOp
 
 from .base_optimization_problem import (  # noqa: F401
     BaseOptimizationProblem,
+    CoeffLike,
     HigherOrderCoeffLike,
     LinearCoeffLike,
     OptimizationProblemStatus,
