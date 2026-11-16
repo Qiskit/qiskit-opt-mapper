@@ -1,0 +1,19 @@
+---
+upgrade:
+  - |
+    Subclasses of :class:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem` must now
+    implement the abstract method ``_append_or_set_objective_from_parts``, in addition to
+    ``_reset_objectives``, ``_objectives_repr`` and ``_objectives_str``. A single-objective
+    subclass replaces its objective in this method. It does not check the objective name.
+    :class:`~qiskit_addon_opt_mapper.OptimizationProblem` is unaffected.
+    The constructor of a subclass must accept ``name`` as its only required argument.
+other:
+  - |
+    The ``higher_order`` argument of
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.minimize` and
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.maximize` is now annotated as a
+    dictionary of ``{order: coeffs}``, which is the only form that was accepted at runtime.
+    The behavior of both methods is unchanged.
+  - |
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.substitute_variables` now returns a
+    problem of the same class as its input.
