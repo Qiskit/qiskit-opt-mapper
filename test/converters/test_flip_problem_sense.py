@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -16,6 +16,7 @@ import unittest
 
 from qiskit_addon_opt_mapper import OptimizationProblem
 from qiskit_addon_opt_mapper.converters import MaximizeToMinimize, MinimizeToMaximize
+from scipy.sparse import dok_array
 
 from ..optimization_test_case import OptimizationTestCase
 
@@ -116,6 +117,26 @@ class TestFlipProblemSense(OptimizationTestCase):
         fval_max = op_conv.objective.evaluate(conv.interpret(x))
         self.assertAlmostEqual(fval_max, -8)
         self.assertAlmostEqual(op.objective.evaluate(x), -fval_max)
+
+    def test_scalar_multiply_preserves_sparse_type(self):
+        """Regression test for the `(-1) * coefficients` reassignment in `_FlipProblemSense`.
+
+        `*` on a scipy sparse `_array` is elementwise (unlike `_matrix`, where it is matmul), so
+        this must keep producing a correctly-scaled, correctly-typed coefficient object when fed
+        back into the `LinearExpression`/`QuadraticExpression` setters.
+        """
+        op = OptimizationProblem()
+        for i in range(2):
+            op.binary_var(name=f"x{i}")
+        op.maximize(linear={"x0": 1, "x1": 2}, quadratic={("x0", "x1"): 3})
+
+        conv = MaximizeToMinimize()
+        op_conv = conv.convert(op)
+
+        self.assertIsInstance(op_conv.objective.linear.coefficients, dok_array)
+        self.assertIsInstance(op_conv.objective.quadratic.coefficients, dok_array)
+        self.assertEqual(op_conv.objective.linear.to_dict(), {0: -1.0, 1: -2.0})
+        self.assertEqual(op_conv.objective.quadratic.to_dict(), {(0, 1): -3.0})
 
 
 if __name__ == "__main__":

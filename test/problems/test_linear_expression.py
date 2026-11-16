@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
 from qiskit_addon_opt_mapper.problems import LinearExpression, OptimizationProblem
-from scipy.sparse import dok_matrix
+from scipy.sparse import dok_array
 
 
 def MAKE_INSTANCE(coeffs, nvars=4):
@@ -32,17 +32,17 @@ def test_accepts_1d_and_correct_length_for_dense(as_array):
     n = 4
     coeffs = as_array([1.0, 0.0, -2.5, 3.0])
     expr = MAKE_INSTANCE(coeffs, nvars=n)
-    assert isinstance(expr.coefficients, dok_matrix)
+    assert isinstance(expr.coefficients, dok_array)
     assert expr.coefficients.shape == (1, n)
 
 
 def test_accepts_sparse_row_vector_correct_length():
     n = 4
-    m = dok_matrix((1, n))
+    m = dok_array((1, n))
     m[0, 0] = 1.0
     m[0, 2] = -2.5
     expr = MAKE_INSTANCE(m, nvars=n)
-    assert isinstance(expr.coefficients, dok_matrix)
+    assert isinstance(expr.coefficients, dok_array)
     assert expr.coefficients.shape == (1, n)
 
 
