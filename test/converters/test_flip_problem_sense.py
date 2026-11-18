@@ -17,7 +17,6 @@ import unittest
 import numpy as np
 from qiskit_addon_opt_mapper import OptimizationProblem
 from qiskit_addon_opt_mapper.converters import MaximizeToMinimize, MinimizeToMaximize
-from scipy.sparse import dok_array
 
 from ..optimization_test_case import OptimizationTestCase
 

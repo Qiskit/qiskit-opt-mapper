@@ -16,32 +16,59 @@ import numpy as np
 import pytest
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
 from qiskit_addon_opt_mapper.infinity import INFINITY
-from qiskit_addon_opt_mapper.problems import OptimizationProblem, QuadraticExpression
+from qiskit_addon_opt_mapper.problems import (
+    OptimizationProblem,
+    QuadraticExpression,
+    Representation,
+)
 from scipy.sparse import (
+    coo_array,
+    csc_array,
     csc_matrix,
+    csr_array,
     csr_matrix,
     dok_array,
-    dok_matrix,  # legacy _matrix input acceptance
+    dok_matrix,
 )
 
+REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+    Representation.CSC: csc_array,
+}
 
-def MAKE_INSTANCE(coeffs, nvars=4):
+
+def MAKE_INSTANCE(coeffs, nvars=4, representation=Representation.DENSE):
     """Helper to create QuadraticExpression instance with a fake OptimizationProblem."""
     op = OptimizationProblem()
     op.binary_var_list(range(nvars))
-    return QuadraticExpression(optimization_problem=op, coefficients=coeffs)
+    return QuadraticExpression(
+        optimization_problem=op, coefficients=coeffs, representation=representation
+    )
+
+
+# ---------------- representation property ----------------
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_representation_property(representation):
+    dense = [[1.0, 2.0], [2.0, 5.0]]
+    expr = MAKE_INSTANCE(dense, nvars=2, representation=representation)
+    assert expr.representation is representation
 
 
 # ---------------- happy path ----------------
-def test_result_is_dense_and_square():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_result_matches_representation_and_square(representation):
     n = 2
     dense = [[1.0, 2.0], [2.0, 5.0]]
-    expr = MAKE_INSTANCE(dense, nvars=n)
-    assert isinstance(expr.coefficients, np.ndarray)
+    expr = MAKE_INSTANCE(dense, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
 
 
-def test_accepts_list_of_lists_n_by_n_and_normalizes():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_list_of_lists_n_by_n_and_normalizes(representation):
     n = 4
     dense = [
         [1.0, 0.0, 0.0, 2.0],
@@ -49,39 +76,41 @@ def test_accepts_list_of_lists_n_by_n_and_normalizes():
         [0.0, 0.0, 4.5, 0.0],
         [2.0, 0.0, 0.0, 5.0],
     ]
-    expr = MAKE_INSTANCE(dense, nvars=n)
-    assert isinstance(expr.coefficients, np.ndarray)
+    expr = MAKE_INSTANCE(dense, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
     # Coefficients are stored in a upper-triangular manner
-    assert expr.coefficients[0, 0] == 1.0
-    assert expr.coefficients[0, 3] == 4.0
-    assert expr.coefficients[2, 2] == 4.5
-    assert expr.coefficients[1, 2] == 0
+    assert expr[0, 0] == 1.0
+    assert expr[0, 3] == 4.0
+    assert expr[2, 2] == 4.5
+    assert expr[1, 2] == 0
 
 
-def test_accepts_ndarray_n_by_n_and_normalizes():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_ndarray_n_by_n_and_normalizes(representation):
     n = 3
     arr = np.array([[1, 2, 0], [0, 3, 4], [0, 0, 5]], dtype=float)
-    expr = MAKE_INSTANCE(arr, nvars=n)
-    assert isinstance(expr.coefficients, np.ndarray)
+    expr = MAKE_INSTANCE(arr, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
-    assert expr.coefficients[0, 1] == 2
-    assert expr.coefficients[1, 2] == 4
-    assert expr.coefficients[2, 2] == 5
+    assert expr[0, 1] == 2
+    assert expr[1, 2] == 4
+    assert expr[2, 2] == 5
 
 
 @pytest.mark.parametrize("sparse_fmt", [dok_matrix, csr_matrix, csc_matrix])
-def test_accepts_sparse_n_by_n_and_normalizes(sparse_fmt):
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_sparse_n_by_n_and_normalizes(sparse_fmt, representation):
     n = 3
     sp = sparse_fmt((n, n))
     sp[0, 0] = 1.0
     sp[1, 1] = 2.0
     sp[2, 2] = 3.0
 
-    expr = MAKE_INSTANCE(sp, nvars=n)
-    assert isinstance(expr.coefficients, np.ndarray)
+    expr = MAKE_INSTANCE(sp, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
-    assert expr.coefficients[1, 1] == 2.0
+    assert expr[1, 1] == 2.0
 
 
 # ---------------- error/exception cases ----------------
@@ -125,24 +154,43 @@ def test_rejects_ndarray_not_2d():
         MAKE_INSTANCE(bad, nvars=n)
 
 
+def test_rejects_sparse_wrong_shape():
+    n = 4
+    bad = dok_array((n, n + 1))
+    with pytest.raises(OptimizationError):
+        MAKE_INSTANCE(bad, nvars=n)
+
+
 def test_rejects_unsupported_format():
     with pytest.raises(OptimizationError):
         MAKE_INSTANCE("not a valid format", nvars=2)
 
 
-def test_accepts_empty_dict():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_empty_dict(representation):
     n = 3
-    expr = MAKE_INSTANCE({}, nvars=n)
-    assert isinstance(expr.coefficients, np.ndarray)
+    expr = MAKE_INSTANCE({}, nvars=n, representation=representation)
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
+    assert expr.to_dict() == {}
 
 
-def test_accepts_dict_with_index_keys_and_sums_symmetric_entries():
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_dict_with_index_keys_and_sums_symmetric_entries(representation):
     n = 3
     coeffs = {(0, 1): 1.0, (1, 0): 2.0, (2, 2): 5.0}
-    expr = MAKE_INSTANCE(coeffs, nvars=n)
-    assert expr.coefficients[0, 1] == 3.0
-    assert expr.coefficients[2, 2] == 5.0
+    expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
+    assert expr[0, 1] == 3.0
+    assert expr[2, 2] == 5.0
+
+
+def test_triangle_fold_handles_i_greater_than_j():
+    # Regression test: a dict entry with i > j must fold into the upper triangle at (j, i),
+    # not silently no-op and leave the value stranded at (i, j) in the lower triangle.
+    n = 3
+    expr = MAKE_INSTANCE({(2, 0): 7.0}, nvars=n)
+    assert expr[0, 2] == 7.0
+    assert expr.to_dict() == {(0, 2): 7.0}
 
 
 def test_accepts_dict_with_name_keys():
@@ -150,14 +198,15 @@ def test_accepts_dict_with_name_keys():
     op.binary_var_list(range(3))
     names = [v.name for v in op.variables]
     expr = QuadraticExpression(optimization_problem=op, coefficients={(names[0], names[1]): 4.0})
-    assert expr.coefficients[0, 1] == 4.0
+    assert expr[0, 1] == 4.0
 
 
 # ---------------- getitem / setitem ----------------
 
 
-def test_getitem_setitem_with_indices():
-    expr = MAKE_INSTANCE({}, nvars=3)
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_getitem_setitem_with_indices(representation):
+    expr = MAKE_INSTANCE({}, nvars=3, representation=representation)
     expr[0, 1] = 7.0
     assert expr[0, 1] == 7.0
     # symmetric access returns the upper-triangle value
@@ -177,8 +226,9 @@ def test_getitem_setitem_with_names():
 # ---------------- to_array / to_dict ----------------
 
 
-def test_to_array_default_and_symmetric():
-    expr = MAKE_INSTANCE({(0, 1): 2.0}, nvars=2)
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_to_array_default_and_symmetric(representation):
+    expr = MAKE_INSTANCE({(0, 1): 2.0}, nvars=2, representation=representation)
     arr = expr.to_array()
     assert arr[0, 1] == 2.0
     assert arr[1, 0] == 0.0
@@ -188,11 +238,21 @@ def test_to_array_default_and_symmetric():
     assert sym[1, 0] == 1.0
 
 
-def test_to_dict_indices_and_names_symmetric():
+def test_dense_to_array_returns_copy():
+    expr = MAKE_INSTANCE({(0, 1): 2.0}, nvars=2)
+    arr = expr.to_array()
+    arr[0, 1] = 999.0
+    assert expr[0, 1] == 2.0
+
+
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_to_dict_indices_and_names_symmetric(representation):
     op = OptimizationProblem()
     op.binary_var_list(range(2))
     names = [v.name for v in op.variables]
-    expr = QuadraticExpression(optimization_problem=op, coefficients={(0, 1): 2.0})
+    expr = QuadraticExpression(
+        optimization_problem=op, coefficients={(0, 1): 2.0}, representation=representation
+    )
 
     d_idx = expr.to_dict()
     assert d_idx == {(0, 1): 2.0}
@@ -208,8 +268,11 @@ def test_to_dict_indices_and_names_symmetric():
 # ---------------- evaluate / evaluate_gradient ----------------
 
 
-def test_evaluate_with_ndarray_list_and_dict():
-    expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_evaluate_with_ndarray_list_and_dict(representation):
+    expr = MAKE_INSTANCE(
+        {(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2, representation=representation
+    )
     x_arr = np.array([1.0, 1.0])
     x_list = [1.0, 1.0]
     x_dict = {0: 1.0, 1: 1.0}
@@ -228,11 +291,32 @@ def test_evaluate_with_name_keyed_dict():
     assert expr.evaluate({names[0]: 1.0, names[1]: 1.0}) == 2.0
 
 
-def test_evaluate_gradient():
-    expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_evaluate_gradient(representation):
+    expr = MAKE_INSTANCE(
+        {(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2, representation=representation
+    )
     grad = expr.evaluate_gradient([1.0, 1.0])
     # Q + Q^T applied to [1, 1]
     assert list(grad) == [4.0, 8.0]
+
+
+def test_evaluate_gradient_cache_invalidated_on_mutation():
+    expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
+    first = expr.evaluate_gradient([1.0, 1.0])
+    assert list(first) == [4.0, 8.0]
+
+    expr[0, 0] = 10.0
+    second = expr.evaluate_gradient([1.0, 1.0])
+    assert list(second) == [22.0, 8.0]
+
+
+def test_evaluate_gradient_cache_reused_between_calls():
+    expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
+    expr.evaluate_gradient([1.0, 1.0])
+    cached = expr._gradient_cache
+    expr.evaluate_gradient([2.0, 2.0])
+    assert expr._gradient_cache is cached
 
 
 # ---------------- bounds ----------------
