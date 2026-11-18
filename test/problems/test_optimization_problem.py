@@ -321,6 +321,30 @@ def test_minimize_maximize_representation_defaults_to_dense(op3, factory):
     assert isinstance(op3.objective.quadratic.coefficients, np.ndarray)
 
 
+def test_linear_constraint_batched_evaluate(op3):
+    """LinearConstraint.evaluate() on 2-D x matches a per-row loop."""
+    con = op3.linear_constraint(linear={0: 2.0, 1: -1.0}, sense="<=", rhs=10.0)
+    rng = np.random.default_rng(1)
+    x_batch = rng.random((5, 3))
+    batched = con.evaluate(x_batch)
+    looped = np.array([con.evaluate(row) for row in x_batch])
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_quadratic_constraint_batched_evaluate(op3):
+    """QuadraticConstraint.evaluate() on 2-D x matches a per-row loop."""
+    con = op3.quadratic_constraint(
+        linear={0: 2.0}, quadratic={(1, 2): 3.0, (0, 0): -1.0}, sense="<=", rhs=10.0
+    )
+    rng = np.random.default_rng(2)
+    x_batch = rng.random((5, 3))
+    batched = con.evaluate(x_batch)
+    looped = np.array([con.evaluate(row) for row in x_batch])
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
 class TestOptimizationProblem(OptimizationTestCase):
     """Test OptimizationProblem without the members that have separate test classes
     (VariablesInterface, etc)."""

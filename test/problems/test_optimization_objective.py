@@ -300,6 +300,61 @@ def test_linear_quadratic_setters_preserve_representation(op3, linear_rep, quadr
     assert obj.quadratic.to_dict() == {(1, 2): 4.0}
 
 
+def test_batched_evaluate_matches_looped_scalar(op3):
+    """evaluate() on 2-D x returns one value per row, matching a per-row loop."""
+    linear = {0: 1.5, 1: -2.0}
+    quadratic = {(2, 2): 3.0}
+    higher_orders = {3: {(0, 0, 1): 2.0}}
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear=linear,
+        quadratic=quadratic,
+        higher_order=higher_orders,
+        sense=ObjSense.MINIMIZE,
+    )
+
+    rng = np.random.default_rng(7)
+    x_batch = rng.random((5, 3))
+
+    batched = obj.evaluate(x_batch)
+    looped = np.array([obj.evaluate(row) for row in x_batch])
+
+    assert isinstance(batched, np.ndarray)
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_batched_evaluate_gradient_matches_looped_scalar(op3):
+    """evaluate_gradient() on 2-D x returns one gradient row per sample."""
+    linear = {0: 1.5, 1: -2.0}
+    quadratic = {(2, 2): 3.0}
+    higher_orders = {3: {(0, 0, 1): 2.0}}
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear=linear,
+        quadratic=quadratic,
+        higher_order=higher_orders,
+        sense=ObjSense.MINIMIZE,
+    )
+
+    rng = np.random.default_rng(8)
+    x_batch = rng.random((5, 3))
+
+    batched = obj.evaluate_gradient(x_batch)
+    looped = np.array([obj.evaluate_gradient(row) for row in x_batch])
+
+    assert batched.shape == (5, 3)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_batched_evaluate_single_sample_matches_1d(op3):
+    obj = OptimizationObjective(optimization_problem=op3, linear={0: 1.0}, sense=ObjSense.MINIMIZE)
+    x = np.array([1.0, 2.0, 3.0])
+    batched = obj.evaluate(x.reshape(1, 3))
+    assert batched.shape == (1,)
+    assert batched[0] == pytest.approx(obj.evaluate(x))
+
+
 def test_non_printable_name_warns():
     """minimize/maximize emit a UserWarning for non-printable objective names."""
     p = OptimizationProblem()

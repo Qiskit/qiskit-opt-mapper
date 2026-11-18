@@ -66,6 +66,42 @@ def test_evaluate_and_gradient(op3):
     assert np.allclose(g, np.array([5.0, -13.0, 6.0]))
 
 
+def test_batched_evaluate_loops_scalar(op3):
+    """2-D x loops the scalar evaluate() per sample row (not vectorized, per spec)."""
+    expr = HigherOrderExpression(
+        op3,
+        coefficients={
+            (0, 0, 1): 2.0,
+            (0, 1, 2): 3.0,
+            (1, 1, 1): -5.0,
+        },
+    )
+    x_batch = np.array([[2.0, 1.0, -1.0], [1.0, 2.0, 3.0]])
+
+    batched = expr.evaluate(x_batch)
+    looped = np.array([expr.evaluate(row) for row in x_batch])
+    assert batched.shape == (2,)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_batched_evaluate_gradient_loops_scalar(op3):
+    """2-D x loops the scalar evaluate_gradient() per sample row (not vectorized, per spec)."""
+    expr = HigherOrderExpression(
+        op3,
+        coefficients={
+            (0, 0, 1): 2.0,
+            (0, 1, 2): 3.0,
+            (1, 1, 1): -5.0,
+        },
+    )
+    x_batch = np.array([[2.0, 1.0, -1.0], [1.0, 2.0, 3.0]])
+
+    batched = expr.evaluate_gradient(x_batch)
+    looped = np.array([expr.evaluate_gradient(row) for row in x_batch])
+    assert batched.shape == (2, 3)
+    np.testing.assert_allclose(batched, looped)
+
+
 def test_bounds_bruteforce():
     op = OptimizationProblem()
     op.integer_var(-1, 3, "x0")
