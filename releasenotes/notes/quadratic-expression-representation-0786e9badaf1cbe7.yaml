@@ -8,3 +8,12 @@ features:
     (``DENSE``, ``COO``, ``DOK``, ``CSR``, or ``CSC``). The chosen representation is
     fixed for the lifetime of the object and exposed via the new read-only
     ``QuadraticExpression.representation`` property.
+upgrade:
+  - |
+    :attr:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.coefficients` now
+    returns a 2-D dense :class:`numpy.ndarray` by default instead of a
+    :class:`scipy.sparse.dok_array`, since the default ``representation`` is now
+    ``DENSE``. Code that calls sparse-only methods such as ``.items()``, ``.tocoo()``,
+    ``.todok()``, or ``.nnz`` on ``.coefficients`` should either adapt to the dense
+    array API or construct the expression with ``representation=Representation.DOK``
+    to keep the previous behavior.

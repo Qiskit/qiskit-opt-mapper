@@ -213,6 +213,16 @@ def test_getitem_setitem_with_indices(representation):
     assert expr[1, 0] == 7.0
 
 
+def test_setitem_on_coo_preserves_representation_and_warns():
+    expr = MAKE_INSTANCE({}, nvars=3, representation=Representation.COO)
+    with pytest.warns(UserWarning, match="inefficient"):
+        expr[0, 1] = 7.0
+    assert expr.representation == Representation.COO
+    assert isinstance(expr.coefficients, coo_array)
+    assert expr[0, 1] == 7.0
+    assert expr[1, 0] == 7.0
+
+
 def test_getitem_setitem_with_names():
     op = OptimizationProblem()
     op.binary_var_list(range(3))
