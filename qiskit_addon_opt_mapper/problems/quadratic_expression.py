@@ -64,7 +64,6 @@ class QuadraticExpression(OptimizationProblemElement):
         super().__init__(optimization_problem)
         self._representation = representation
         self._coefficients: ndarray | sparray
-        self._gradient_cache: ndarray | sparray | None = None
         self.coefficients = coefficients
 
     @property
@@ -107,7 +106,6 @@ class QuadraticExpression(OptimizationProblemElement):
         if isinstance(self._coefficients, coo_array):
             self._coefficients = self._coefficients.todok()
         self._coefficients[min(i, j), max(i, j)] = value
-        self._gradient_cache = None
 
     def _coeffs_to_representation(
         self,
@@ -205,14 +203,11 @@ class QuadraticExpression(OptimizationProblemElement):
         return (mat + upper.transpose() - upper).asformat(mat.format)
 
     def _gradient_matrix(self) -> ndarray | sparray:
-        """Returns ``Q + Q.T`` for the gradient, caching it until the coefficients change."""
-        if self._gradient_cache is None:
-            mat = self._coefficients
-            if isinstance(mat, ndarray):
-                self._gradient_cache = mat + mat.T
-            else:
-                self._gradient_cache = (mat.transpose() + mat).asformat(mat.format)
-        return self._gradient_cache
+        """Returns ``Q + Q.T`` for the gradient."""
+        mat = self._coefficients
+        if isinstance(mat, ndarray):
+            return mat + mat.T
+        return (mat.transpose() + mat).asformat(mat.format)
 
     @property
     def coefficients(self) -> ndarray | sparray:
@@ -240,7 +235,6 @@ class QuadraticExpression(OptimizationProblemElement):
             coefficients: The coefficients of the quadratic expression.
         """
         self._coefficients = self._coeffs_to_representation(coefficients)
-        self._gradient_cache = None
 
     def to_array(self, symmetric: bool = False) -> ndarray:
         """Returns the coefficients of the quadratic expression as array.
