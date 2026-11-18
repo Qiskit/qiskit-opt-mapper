@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -144,7 +144,7 @@ class _SubstituteVariables:
             Otherwise, it gets `OptimizationProblem.Status.INFEASIBLE`.
         """
         self._src = optimization_problem
-        self._dst = OptimizationProblem(optimization_problem.name)
+        self._dst = optimization_problem._new_empty()
         self._subs = subs
         results = [
             self._variables(),
@@ -283,13 +283,13 @@ class _SubstituteVariables:
             optimization_problem=self._dst, coefficients=quad if quad else {}
         )
 
-        self._dst._set_objective(
+        self._dst._append_or_set_objective_from_parts(
             obj.sense,
-            constant,
-            lin_expr.coefficients,
-            quad_expr.coefficients,
-            higher if higher else {},
-            obj.name,
+            constant=constant,
+            linear=lin_expr.coefficients,
+            quadratic=quad_expr.coefficients,
+            higher_order=higher if higher else {},
+            name=obj.name,
         )
         return True
 

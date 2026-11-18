@@ -15,14 +15,15 @@
 
 import logging
 
-from numpy import ndarray
 from qiskit.quantum_info import SparsePauliOp
-from scipy.sparse import spmatrix
 
 from .base_optimization_problem import (  # noqa: F401
     BaseOptimizationProblem,
     CoeffLike,
+    HigherOrderCoeffLike,
+    LinearCoeffLike,
     OptimizationProblemStatus,
+    QuadraticCoeffLike,
 )
 from .constraint import ConstraintSense  # noqa: F401
 from .optimization_objective import ObjSense, OptimizationObjective
@@ -53,11 +54,9 @@ class OptimizationProblem(BaseOptimizationProblem):
     def minimize(
         self,
         constant: float = 0.0,
-        linear: ndarray | spmatrix | list[float] | dict[int | str, float] = None,
-        quadratic: (
-            ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
-        ) = None,
-        higher_order: CoeffLike | dict[int, CoeffLike] | None = None,
+        linear: LinearCoeffLike | None = None,
+        quadratic: QuadraticCoeffLike | None = None,
+        higher_order: HigherOrderCoeffLike | None = None,
         name: str = "",
     ) -> None:
         """Sets an objective to be minimized.
@@ -66,25 +65,27 @@ class OptimizationProblem(BaseOptimizationProblem):
             constant: The constant part of the objective function.
             linear: The coefficients for the linear part of the objective function.
             quadratic: The coefficients for the quadratic part of the objective function.
-            higher_order: A single higher-order expression or a dictionary of {order: coeffs}
-                for multiple orders (k>=3).
+            higher_order: A dictionary of {order: coeffs} for multiple orders (k>=3).
             name: The name of the objective function. The default empty string leaves the
                 objective unnamed.
         """
         if name:
             self._check_name(name, "Objective")
-        self._set_objective(
-            OptimizationObjective.Sense.MINIMIZE, constant, linear, quadratic, higher_order, name
+        self._append_or_set_objective_from_parts(
+            OptimizationObjective.Sense.MINIMIZE,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=higher_order,
+            name=name,
         )
 
     def maximize(
         self,
         constant: float = 0.0,
-        linear: ndarray | spmatrix | list[float] | dict[int | str, float] = None,
-        quadratic: (
-            ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
-        ) = None,
-        higher_order: CoeffLike | dict[int, CoeffLike] | None = None,
+        linear: LinearCoeffLike | None = None,
+        quadratic: QuadraticCoeffLike | None = None,
+        higher_order: HigherOrderCoeffLike | None = None,
         name: str = "",
     ) -> None:
         """Sets an objective to be maximized.
@@ -93,39 +94,18 @@ class OptimizationProblem(BaseOptimizationProblem):
             constant: The constant part of the objective function.
             linear: The coefficients for the linear part of the objective function.
             quadratic: The coefficients for the quadratic part of the objective function.
-            higher_order: A single higher-order expression or a dictionary of {order: coeffs}
-                for multiple orders (k>=3).
+            higher_order: A dictionary of {order: coeffs} for multiple orders (k>=3).
             name: The name of the objective function. The default empty string leaves the
                 objective unnamed.
         """
         if name:
             self._check_name(name, "Objective")
-        self._set_objective(
-            OptimizationObjective.Sense.MAXIMIZE, constant, linear, quadratic, higher_order, name
-        )
-
-    def _set_objective(
-        self,
-        sense: ObjSense,
-        constant: float,
-        linear,
-        quadratic,
-        higher_order,
-        name: str,
-    ) -> None:
-        """Set the objective without checking the name.
-
-        :meth:`minimize` and :meth:`maximize` check the name when the user sets it. Code that
-        copies an already-checked objective, such as the converters, calls this method
-        directly so the check does not run again.
-        """
-        self._objective = OptimizationObjective(
-            self,
+        self._append_or_set_objective_from_parts(
+            OptimizationObjective.Sense.MAXIMIZE,
             constant=constant,
             linear=linear,
             quadratic=quadratic,
-            sense=sense,
-            higher_order=higher_order,  # type: ignore
+            higher_order=higher_order,
             name=name,
         )
 
@@ -226,3 +206,36 @@ class OptimizationProblem(BaseOptimizationProblem):
             The rendering of the single objective.
         """
         return self._objective.render()
+
+    def _append_or_set_objective_from_parts(
+        self,
+        sense: ObjSense,
+        *,
+        constant: float = 0.0,
+        linear: LinearCoeffLike | None = None,
+        quadratic: QuadraticCoeffLike | None = None,
+        higher_order: HigherOrderCoeffLike | None = None,
+        name: str = "",
+    ) -> None:
+        """Sets the single objective from its already-assembled parts.
+
+        This method does not check ``name``. :meth:`minimize` and :meth:`maximize` check it
+        before they call this method.
+
+        Args:
+            sense: The sense of the objective.
+            constant: The constant part of the objective function.
+            linear: The coefficients of the linear part.
+            quadratic: The coefficients of the quadratic part.
+            higher_order: A dictionary of ``{order: coeffs}`` for the higher-order part.
+            name: The name of the objective. The default empty string leaves it unnamed.
+        """
+        self._objective = OptimizationObjective(
+            self,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            sense=sense,
+            higher_order=higher_order,
+            name=name,
+        )

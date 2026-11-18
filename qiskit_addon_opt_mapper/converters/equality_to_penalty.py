@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -183,8 +183,13 @@ class EqualityToPenalty(OptimizationProblemConverter):
         for con in problem.higher_order_constraints:  # type: ignore
             handle_eq_constraint(con)  # type: ignore
 
-        self._dst._set_objective(
-            problem.objective.sense, offset, linear, quadratic, ho, problem.objective.name
+        self._dst._append_or_set_objective_from_parts(
+            problem.objective.sense,
+            constant=offset,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=ho,  # type: ignore[arg-type]
+            name=problem.objective.name,
         )
 
         # Update the penalty to the one just used

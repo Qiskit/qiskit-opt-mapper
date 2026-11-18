@@ -88,8 +88,7 @@ class OptimizationObjective(OptimizationProblemElement):
             constant: The constant part of the objective function.
             linear: The coefficients for the linear part of the objective function.
             quadratic: The coefficients for the quadratic part of the objective function.
-            higher_order: A single higher-order expression or a dictionary of {order: coeffs}
-                for multiple orders (k>=3).
+            higher_order: A dictionary of {order: coeffs} for multiple orders (k>=3).
             sense: The sense of the objective function (e.g., MINIMIZE, MAXIMIZE).
             name: The name of the objective function. The default empty string leaves the
                 objective unnamed.

@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -16,8 +16,9 @@ import numpy as np
 from qiskit.quantum_info import SparsePauliOp
 from qiskit_addon_opt_mapper import OptimizationError, OptimizationProblem
 from qiskit_addon_opt_mapper.converters import EqualityToPenalty
-from qiskit_addon_opt_mapper.problems import Constraint
+from qiskit_addon_opt_mapper.problems import Constraint, ObjSense, OptimizationObjective
 from qiskit_addon_opt_mapper.translators import to_ising
+from qiskit_addon_opt_mapper.translators.ising import _objective_to_ising
 
 from ..optimization_test_case import OptimizationTestCase
 
@@ -239,3 +240,15 @@ class TestIsingTranslator(OptimizationTestCase):
             )
             np.testing.assert_allclose(op.to_matrix(), op_ref.to_matrix())
             self.assertAlmostEqual(offset, 0.1875)
+
+    def test_objective_to_ising_translates_the_given_objective(self):
+        """`_objective_to_ising` translates the objective it is given, not the problem's own."""
+        op = OptimizationProblem()
+        op.binary_var("x")
+        op.binary_var("y")
+        op.minimize(linear={"x": 1})
+        other = OptimizationObjective(op, linear={"y": 2}, constant=1, sense=ObjSense.MAXIMIZE)
+        qubit_op, offset = _objective_to_ising(op, other)
+        self.assertTrue(qubit_op.equiv(SparsePauliOp.from_list([("ZI", 1.0)])))
+        self.assertEqual(offset, -2.0)
+        self.assertEqual(to_ising(op), _objective_to_ising(op, op.objective))
