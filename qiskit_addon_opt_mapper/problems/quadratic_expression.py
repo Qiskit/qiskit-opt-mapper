@@ -121,6 +121,10 @@ class QuadraticExpression(OptimizationProblemElement):
             self._coefficients = coo_array(dok)
             return
         self._coefficients[min(i, j), max(i, j)] = value
+        if isinstance(self._coefficients, csr_array | csc_array):
+            # Unlike DOK, CSR/CSC keep an explicit stored zero after this assignment;
+            # drop it so to_dict()/nnz/etc. agree with the other representations.
+            self._coefficients.eliminate_zeros()
 
     def _coeffs_to_representation(
         self,
