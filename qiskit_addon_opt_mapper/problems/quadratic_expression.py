@@ -350,17 +350,23 @@ class QuadraticExpression(OptimizationProblemElement):
             return {(variables[i].name, variables[j].name): v for i, j, v in items}
         return {(i, j): v for i, j, v in items}
 
-    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float | ndarray:
         """Evaluate the quadratic expression for given variables: x * Q * x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the expression is evaluated for each row at once.
 
 
         Returns:
-            The value of the quadratic expression given the variable values.
+            The value of the quadratic expression given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         x = self._cast_as_array(x)
+
+        if x.ndim == 2:
+            # avoid materializing an (n_samples, n_samples) intermediate from x @ Q @ x.T
+            return cast(ndarray, np.sum((x @ self.coefficients) * x, axis=1))
 
         # compute x * Q * x for the quadratic expression
         val = x @ self.coefficients @ x
@@ -372,17 +378,21 @@ class QuadraticExpression(OptimizationProblemElement):
         """Evaluate the gradient of the quadratic expression for given variables.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the gradient is evaluated for each row at once.
 
 
         Returns:
-            The value of the gradient quadratic expression given the variable values.
+            The value of the gradient quadratic expression given the variable values. Shape
+            ``(n_vars,)`` for 1-D input, or ``(n_samples, n_vars)`` for 2-D input.
         """
         x = self._cast_as_array(x)
 
-        # compute (Q' + Q) * x as Q @ x + x @ Q, which never forms the (n, n) matrix Q + Q'
+        # compute (Q' + Q) * x (per-row, for 2-D x) as x @ Q + x @ Q', which never forms the
+        # (n, n) matrix Q + Q' and works unchanged for 1-D and 2-D x (x @ Q == (Q' @ x)' for
+        # 1-D x, so this matches the un-batched Q @ x + x @ Q formulation)
         mat = self._coefficients
-        val = mat @ x + x @ mat
+        val = x @ mat + x @ mat.T
 
         # return the result
         return cast(ndarray, val)

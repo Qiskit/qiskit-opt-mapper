@@ -73,15 +73,17 @@ class LinearConstraint(Constraint):
         """
         self._linear = LinearExpression(self.optimization_problem, linear)
 
-    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float | ndarray:
         """Evaluate the left-hand-side of the constraint.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the constraint is evaluated for each row at once.
 
 
         Returns:
-            The left-hand-side of the constraint given the variable values.
+            The left-hand-side of the constraint given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         return self.linear.evaluate(x)
 

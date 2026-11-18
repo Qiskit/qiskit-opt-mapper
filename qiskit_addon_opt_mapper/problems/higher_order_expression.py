@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -208,16 +208,22 @@ class HigherOrderExpression(OptimizationProblemElement):
                 arr[perm] += weight
         return arr
 
-    def evaluate(self, x: ndarray | list | dict[Index, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[Index, float]) -> float | ndarray:
         """Evaluate the expression: sum_{t} C[t] * prod_{i in t} x[i].
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the existing scalar evaluation is looped over each
+                sample row — this is not vectorized and offers no performance benefit over
+                calling :meth:`evaluate` once per sample directly.
 
 
         Returns:
-            The value of the higher order expression given the variable values.
+            The value of the higher order expression given the variable values. A scalar for
+            1-D input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
+        if not isinstance(x, dict) and np.asarray(x).ndim == 2:
+            return np.array([self.evaluate(row) for row in np.asarray(x)])
         x = self._cast_as_array(x)
         val = 0.0
         for idx, c in self._coeffs.items():
@@ -233,12 +239,18 @@ class HigherOrderExpression(OptimizationProblemElement):
         For each m, g[m] = sum_{t} C[t] * (count_m_in_t) * prod_{i in t / {one m}}.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the existing scalar gradient is looped over each
+                sample row — this is not vectorized and offers no performance benefit over
+                calling :meth:`evaluate_gradient` once per sample directly.
 
 
         Returns:
             The value of the gradient of the higher order expression given the variable values.
+            Shape ``(n_vars,)`` for 1-D input, or ``(n_samples, n_vars)`` for 2-D input.
         """
+        if not isinstance(x, dict) and np.asarray(x).ndim == 2:
+            return np.array([self.evaluate_gradient(row) for row in np.asarray(x)])
         x = self._cast_as_array(x)
         g = np.zeros(self._n, dtype=float)
         for idx, c in self._coeffs.items():

@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -127,7 +127,7 @@ class CplexSolver(OptimizationSolver):
             x = [0.0] * mod.number_of_variables
             return SolverResult(
                 x=x,
-                fval=problem.objective.evaluate(x),
+                fval=float(problem.objective.evaluate(x)),
                 variables=problem.variables,
                 status=SolverResultStatus.FAILURE,
                 raw_results=None,

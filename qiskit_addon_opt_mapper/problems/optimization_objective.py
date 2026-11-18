@@ -17,6 +17,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, cast
 
+import numpy as np
 from numpy import ndarray
 from scipy.sparse import sparray, spmatrix
 
@@ -246,17 +247,20 @@ class OptimizationObjective(OptimizationProblemElement):
         """
         self._sense = sense
 
-    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float | ndarray:
         """Evaluate objective value at x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the objective is evaluated for each row at once.
 
         Returns:
-            The objective value given the variable values.
+            The objective value given the variable values. A scalar for 1-D input, or a 1-D
+            array of ``n_samples`` values for 2-D input.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
+        n_vars = np.asarray(x).shape[-1] if not isinstance(x, dict) else n
+        if self.linear.coefficients.shape != (n,) or n_vars != n:
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"
@@ -264,19 +268,24 @@ class OptimizationObjective(OptimizationProblemElement):
         val = self.constant + self.linear.evaluate(x) + self.quadratic.evaluate(x)
         for expr in self._higher_order.values():
             val += expr.evaluate(x)
+        if isinstance(val, ndarray):
+            return val
         return float(val)
 
     def evaluate_gradient(self, x: ndarray | list | dict[int | str, float]) -> ndarray:
         """Evaluate gradient of the objective at x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the gradient is evaluated for each row at once.
 
         Returns:
-            The gradient of the objective function given the variable values.
+            The gradient of the objective function given the variable values. Shape
+            ``(n_vars,)`` for 1-D input, or ``(n_samples, n_vars)`` for 2-D input.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
+        n_vars = np.asarray(x).shape[-1] if not isinstance(x, dict) else n
+        if self.linear.coefficients.shape != (n,) or n_vars != n:
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"
