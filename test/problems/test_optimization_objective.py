@@ -18,9 +18,12 @@ import pytest
 # --- adjust imports to your package layout ---
 from qiskit_addon_opt_mapper import OptimizationError
 from qiskit_addon_opt_mapper.problems import (
+    LinearExpression,
     ObjSense,
     OptimizationObjective,
     OptimizationProblem,
+    QuadraticExpression,
+    Representation,
 )
 
 # ---------------------------------------------
@@ -196,6 +199,30 @@ def test_render_public_method(op3):
 
     op3.minimize(linear={0: 1.0}, name="cost")
     assert op3.objective.render() == "minimize x0 'cost'"
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.CSR, Representation.CSC),
+    ],
+)
+def test_evaluate_shape_guard_does_not_spuriously_fire_for_non_dense(
+    op3, linear_rep, quadratic_rep
+):
+    """evaluate()/evaluate_gradient()'s (n,)/(n,n) shape guard passes for any representation."""
+    obj = OptimizationObjective(optimization_problem=op3, sense=ObjSense.MINIMIZE)
+    # Representation propagation through the public setters is PR 4's scope; until then,
+    # exercise the shape guard directly against a non-dense expression.
+    obj._linear = LinearExpression(op3, {0: 1.0}, representation=linear_rep)
+    obj._quadratic = QuadraticExpression(op3, {(1, 2): 2.0}, representation=quadratic_rep)
+
+    x = [1.0, 1.0, 1.0]
+    assert obj.evaluate(x) == 1.0 + 2.0
+    assert np.allclose(obj.evaluate_gradient(x), [1.0, 2.0, 2.0])
 
 
 def test_non_printable_name_warns():
