@@ -207,10 +207,11 @@ class BaseOptimizationProblem(ABC):
         """Adds or sets an objective from its already-assembled parts.
 
         A subclass with a single objective replaces it, while a subclass with several objectives
-        appends to them. This method does not check ``name``: callers that receive the name from
-        a user, such as ``minimize``, check it first. Callers that copy an objective that was
-        already checked, such as the converters, call this method directly so that the warning
-        for a non-printable name is not repeated.
+        appends to them. ``OptimizationProblem`` does not check ``name``: callers that receive the
+        name from a user, such as ``minimize``, check it first. Callers that copy an objective that
+        was already checked, such as the converters, call this method directly so that the warning
+        for a non-printable name is not repeated. ``MultiObjectiveProblem`` does check ``name``,
+        so a copy warns again for a non-printable name.
 
         Args:
             sense: The sense of the objective.

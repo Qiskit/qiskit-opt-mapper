@@ -238,6 +238,10 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
     ) -> None:
         """Appends an objective built from its already-assembled parts.
 
+        Unlike ``OptimizationProblem``, this method does check ``name``, because it goes through
+        :meth:`add_objective`. A non-printable name therefore warns again when an already-checked
+        objective is copied, for example by :meth:`substitute_variables`.
+
         Args:
             sense: The sense of the objective.
             constant: The constant part of the objective function.
