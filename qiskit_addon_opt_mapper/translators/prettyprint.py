@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -9,7 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Translate ``OptimizationProblem`` into a pretty-printed string."""
+"""Translate an optimization problem into a pretty-printed string."""
 
 from io import StringIO
 from math import isclose
@@ -19,10 +19,10 @@ import numpy as np
 
 from qiskit_addon_opt_mapper import INFINITY, OptimizationError
 from qiskit_addon_opt_mapper.problems import (
+    BaseOptimizationProblem,
     HigherOrderExpression,
     LinearExpression,
     OptimizationObjective,
-    OptimizationProblem,
     QuadraticExpression,
     VarType,
 )
@@ -202,34 +202,51 @@ def _monomial_tuple_to_str(vars_tuple: tuple[str, ...]) -> str:
     return "*".join(parts)
 
 
-def prettyprint(optimization_problem: OptimizationProblem, wrap: int = 80) -> str:
-    """Translate an OptimizationProblem into a pretty-printed string (higher-order aware)."""
+def _objective_block(
+    obj: OptimizationObjective,
+    wrap: int = 80,
+    *,
+    always_suffix: bool = False,
+) -> str:
+    """Format a single objective block with header and expression."""
+    if obj.name:
+        _check_name(obj.name, "Objective")
+        suffix = f"'{obj.name}'"
+    elif always_suffix:
+        suffix = "''"
+    else:
+        suffix = ""
+
+    header = "Minimize" if obj.sense == OptimizationObjective.Sense.MINIMIZE else "Maximize"
+    expr = expr2str(
+        obj.constant,
+        obj.linear,
+        obj.quadratic,
+        obj.higher_order,
+        suffix=suffix,
+        wrap=wrap,
+        indent=2,
+    )
+    return f"{header}\n{expr}"
+
+
+def prettyprint(optimization_problem: BaseOptimizationProblem, wrap: int = 80) -> str:
+    """Translate an optimization problem into a pretty-printed string (higher-order aware)."""
     with StringIO() as buf:
         _check_name(optimization_problem.name, "Problem")
         buf.write(f"Problem name: {optimization_problem.name}\n\n")
 
-        if optimization_problem.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            buf.write("Minimize\n")
+        if not optimization_problem.is_multi_objective:
+            obj = next(optimization_problem._iter_objectives())  # pylint: disable=protected-access
+            buf.write(_objective_block(obj, wrap=wrap))
         else:
-            buf.write("Maximize\n")
-
-        # --- Objective (support higher_orders / higher_order) ---
-        obj = optimization_problem.objective
-        _check_name(obj.name, "Objective")
-        suffix = f"'{obj.name}'" if obj.name else ""
-
-        # prefer multiple blocks if available
-        buf.write(
-            expr2str(
-                obj.constant,
-                obj.linear,
-                obj.quadratic,
-                obj.higher_order,
-                suffix=suffix,
-                wrap=wrap,
-                indent=2,
-            )
-        )
+            # Objectives are separated by a single newline; the last one has no trailing newline
+            # so that the shared "\n\nSubject to" below leaves exactly one blank line.
+            objective_blocks = [
+                _objective_block(obj, wrap=wrap)
+                for obj in optimization_problem._iter_objectives()  # pylint: disable=protected-access
+            ]
+            buf.write("\n".join(objective_blocks) if objective_blocks else "  No objectives")
 
         # --- Constraints header ---
         buf.write("\n\nSubject to")

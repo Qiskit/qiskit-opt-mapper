@@ -10,11 +10,12 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Substitute variables of OptimizationProblem."""
+"""Substitute variables of an optimization problem."""
 
 import logging
 from dataclasses import dataclass
 from math import isclose
+from typing import TypeVar
 
 from ..converters.util import (
     Monomial,
@@ -28,10 +29,12 @@ from ..converters.util import (
 )
 from ..exceptions import OptimizationError
 from ..infinity import INFINITY
+from .base_optimization_problem import BaseOptimizationProblem
 from .constraint import ConstraintSense
 from .linear_expression import LinearExpression
-from .optimization_problem import OptimizationProblem
 from .quadratic_expression import QuadraticExpression
+
+_T = TypeVar("_T", bound=BaseOptimizationProblem)
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +56,10 @@ class SubstitutionExpression:
 
 
 def substitute_variables(
-    optimization_problem: OptimizationProblem,
+    optimization_problem: _T,
     constants: dict[str | int, float] | None = None,
     variables: dict[str | int, tuple[str | int, float]] | None = None,
-) -> OptimizationProblem:
+) -> _T:
     """Substitutes variables with constants or other variables.
 
     Args:
@@ -71,10 +74,9 @@ def substitute_variables(
             e.g., ``{'x': ('y', 2)}`` means ``x`` is substituted with ``y`` * 2
 
     Returns:
-        An optimization problem by substituting variables with constants or other variables.
-        If the substitution is valid, ``OptimizationProblem.status`` is still
-        ``OptimizationProblem.Status.VALID``.
-        Otherwise, it gets ``OptimizationProblem.Status.INFEASIBLE``.
+        An optimization problem of the same class by substituting variables with constants or
+        other variables. If the substitution is valid, ``status`` is still ``Status.VALID``.
+        Otherwise, it gets ``Status.INFEASIBLE``.
 
     Raises:
         OptimizationError: if the substitution is invalid as follows.
@@ -118,15 +120,15 @@ class _SubstituteVariables:
     """A class to substitute variables of an optimization problem with constants."""
 
     def __init__(self) -> None:
-        self._src: OptimizationProblem | None = None
-        self._dst: OptimizationProblem | None = None
+        self._src: BaseOptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._subs: dict[str, SubstitutionExpression] = {}
 
     def substitute_variables(
         self,
-        optimization_problem: OptimizationProblem,
+        optimization_problem: _T,
         subs: dict[str, SubstitutionExpression],
-    ) -> OptimizationProblem:
+    ) -> _T:
         """Substitutes variables with constants or other variables.
 
         Args:
@@ -138,24 +140,24 @@ class _SubstituteVariables:
 
 
         Returns:
-            An optimization problem by substituting variables with constants or other variables.
-            If the substitution is valid, `OptimizationProblem.status` is still
-            `OptimizationProblem.Status.VALID`.
-            Otherwise, it gets `OptimizationProblem.Status.INFEASIBLE`.
+            An optimization problem of the same class by substituting variables with constants or
+            other variables. If the substitution is valid, `status` is still `Status.VALID`.
+            Otherwise, it gets `Status.INFEASIBLE`.
         """
         self._src = optimization_problem
-        self._dst = optimization_problem._new_empty()
+        dst = optimization_problem._new_empty()
+        self._dst = dst
         self._subs = subs
         results = [
             self._variables(),
-            self._objective(),
+            self._objectives(),
             self._linear_constraints(),
             self._quadratic_constraints(),
             self._higher_order_constraints(),
         ]
         if not all(results):
-            self._dst._status = OptimizationProblem.Status.INFEASIBLE
-        return self._dst
+            dst._status = BaseOptimizationProblem.Status.INFEASIBLE
+        return dst
 
     @staticmethod
     def _feasible(sense: ConstraintSense, rhs: float) -> bool:
@@ -270,27 +272,30 @@ class _SubstituteVariables:
 
         return _poly_split(out)
 
-    def _objective(self) -> bool:
+    def _objectives(self) -> bool:
+        """Substitutes every objective. An objective is never dropped, so this never fails."""
         assert self._src is not None and self._dst is not None
-        obj = self._src.objective
-        const, lin, quad, higher = self._poly_apply_substitution(
-            obj.linear, obj.quadratic, getattr(obj, "higher_order", {})
-        )
+        for obj in self._src._iter_objectives():
+            const, lin, quad, higher = self._poly_apply_substitution(
+                obj.linear, obj.quadratic, getattr(obj, "higher_order", {})
+            )
 
-        constant = obj.constant + const
-        lin_expr = LinearExpression(optimization_problem=self._dst, coefficients=lin if lin else {})
-        quad_expr = QuadraticExpression(
-            optimization_problem=self._dst, coefficients=quad if quad else {}
-        )
+            constant = obj.constant + const
+            lin_expr = LinearExpression(
+                optimization_problem=self._dst, coefficients=lin if lin else {}
+            )
+            quad_expr = QuadraticExpression(
+                optimization_problem=self._dst, coefficients=quad if quad else {}
+            )
 
-        self._dst._append_or_set_objective_from_parts(
-            obj.sense,
-            constant=constant,
-            linear=lin_expr.coefficients,
-            quadratic=quad_expr.coefficients,
-            higher_order=higher if higher else {},
-            name=obj.name,
-        )
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=constant,
+                linear=lin_expr.coefficients,
+                quadratic=quad_expr.coefficients,
+                higher_order=higher if higher else {},
+                name=obj.name,
+            )
         return True
 
     def _linear_constraints(self) -> bool:
@@ -389,5 +394,5 @@ class _SubstituteVariables:
 # ---- small helper to provide an empty quadratic for linear constraints path ----
 
 
-def _zero_quad(dst_problem: OptimizationProblem) -> QuadraticExpression:
+def _zero_quad(dst_problem: BaseOptimizationProblem) -> QuadraticExpression:
     return QuadraticExpression(optimization_problem=dst_problem, coefficients={})

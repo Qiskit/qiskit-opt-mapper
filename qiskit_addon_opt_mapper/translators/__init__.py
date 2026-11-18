@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -29,13 +29,15 @@ Translators
    from_docplex_mp
    to_docplex_mp
    to_ising
+   to_isings
 """
 
 from .docplex_mp import from_docplex_mp, to_docplex_mp
-from .ising import to_ising
+from .ising import to_ising, to_isings
 
 __all__ = [
     "from_docplex_mp",
     "to_docplex_mp",
     "to_ising",
+    "to_isings",
 ]
