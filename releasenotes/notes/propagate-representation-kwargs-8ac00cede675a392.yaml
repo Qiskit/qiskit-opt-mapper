@@ -1,0 +1,16 @@
+---
+features:
+  - |
+    The ``representation`` (and, where both a linear and a quadratic part are
+    involved, ``linear_representation`` / ``quadratic_representation``) keyword
+    arguments are now accepted throughout the public construction API, letting
+    callers select the internal storage representation of coefficients without
+    constructing the underlying expression objects directly. This includes
+    :meth:`~qiskit_addon_opt_mapper.problems.OptimizationProblem.minimize`,
+    :meth:`~qiskit_addon_opt_mapper.problems.OptimizationProblem.maximize`,
+    :meth:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem.linear_constraint`,
+    :meth:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem.quadratic_constraint`,
+    :meth:`~qiskit_addon_opt_mapper.problems.BaseOptimizationProblem.higher_order_constraint`,
+    and the constructors of
+    :class:`~qiskit_addon_opt_mapper.problems.OptimizationObjective` and
+    :class:`~qiskit_addon_opt_mapper.problems.HigherOrderConstraint`.
