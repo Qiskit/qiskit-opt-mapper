@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -21,7 +21,6 @@ from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint
 from ..problems.higher_order_constraint import HigherOrderConstraint
 from ..problems.linear_constraint import LinearConstraint
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.quadratic_constraint import QuadraticConstraint
 from ..problems.variable import Variable
@@ -194,10 +193,14 @@ class InequalityToEquality(OptimizationProblemConverter):
             for degree, expr in self._src.objective.higher_order.items()
         }
 
-        if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)  # type: ignore
-        else:
-            self._dst.maximize(constant, linear, quadratic, ho)  # type: ignore
+        self._dst._append_or_set_objective_from_parts(
+            self._src.objective.sense,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=ho,  # type: ignore[arg-type]
+            name=self._src.objective.name,
+        )
 
         # Add linear constraints
         for lin_const_args in new_linear_constraints:

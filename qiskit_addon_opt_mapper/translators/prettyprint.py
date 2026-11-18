@@ -215,6 +215,8 @@ def prettyprint(optimization_problem: OptimizationProblem, wrap: int = 80) -> st
 
         # --- Objective (support higher_orders / higher_order) ---
         obj = optimization_problem.objective
+        _check_name(obj.name, "Objective")
+        suffix = f"'{obj.name}'" if obj.name else ""
 
         # prefer multiple blocks if available
         buf.write(
@@ -223,6 +225,7 @@ def prettyprint(optimization_problem: OptimizationProblem, wrap: int = 80) -> st
                 obj.linear,
                 obj.quadratic,
                 obj.higher_order,
+                suffix=suffix,
                 wrap=wrap,
                 indent=2,
             )

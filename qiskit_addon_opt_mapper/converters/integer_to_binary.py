@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -17,7 +17,6 @@ import copy
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
@@ -284,10 +283,14 @@ class IntegerToBinary(OptimizationProblemConverter):
                     quadratic[(i[0], i[1])] = v
             ho.pop(2)
 
-        if self._src.objective.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(constant, linear, quadratic, ho)
-        else:
-            self._dst.maximize(constant, linear, quadratic, ho)
+        self._dst._append_or_set_objective_from_parts(
+            self._src.objective.sense,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=ho,
+            name=self._src.objective.name,
+        )
 
         # set linear constraints
         for constraint in self._src.linear_constraints:
