@@ -75,6 +75,10 @@ class QuadraticExpression(OptimizationProblemElement):
     def __getitem__(self, key: tuple[str | int, str | int]) -> float:
         """Returns the coefficient where i, j can be a variable names or indices.
 
+        On a ``Representation.COO`` expression, every call converts the whole matrix
+        to CSR, making repeated element access O(nnz) per call. Prefer ``DOK``, ``CSR``,
+        or ``CSC`` for workloads that do many scalar reads.
+
         Args:
             key: The tuple of indices or names of the variables corresponding to the coefficient.
 
