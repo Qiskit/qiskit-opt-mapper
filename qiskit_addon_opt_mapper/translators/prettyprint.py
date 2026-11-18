@@ -202,18 +202,11 @@ def _monomial_tuple_to_str(vars_tuple: tuple[str, ...]) -> str:
     return "*".join(parts)
 
 
-def _objective_block(
-    obj: OptimizationObjective,
-    wrap: int = 80,
-    *,
-    always_suffix: bool = False,
-) -> str:
+def _objective_block(obj: OptimizationObjective, wrap: int = 80) -> str:
     """Format a single objective block with header and expression."""
     if obj.name:
         _check_name(obj.name, "Objective")
         suffix = f"'{obj.name}'"
-    elif always_suffix:
-        suffix = "''"
     else:
         suffix = ""
 
