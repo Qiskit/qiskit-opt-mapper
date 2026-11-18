@@ -301,7 +301,7 @@ def test_evaluate_gradient(representation):
     assert list(grad) == [4.0, 8.0]
 
 
-def test_evaluate_gradient_cache_invalidated_on_mutation():
+def test_evaluate_gradient_reflects_mutation():
     expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
     first = expr.evaluate_gradient([1.0, 1.0])
     assert list(first) == [4.0, 8.0]
@@ -311,12 +311,14 @@ def test_evaluate_gradient_cache_invalidated_on_mutation():
     assert list(second) == [22.0, 8.0]
 
 
-def test_evaluate_gradient_cache_reused_between_calls():
+def test_evaluate_gradient_reflects_coefficients_mutated_in_place():
     expr = MAKE_INSTANCE({(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0}, nvars=2)
-    expr.evaluate_gradient([1.0, 1.0])
-    cached = expr._gradient_cache
-    expr.evaluate_gradient([2.0, 2.0])
-    assert expr._gradient_cache is cached
+    first = expr.evaluate_gradient([1.0, 1.0])
+    assert list(first) == [4.0, 8.0]
+
+    expr.coefficients[0, 0] = 10.0
+    second = expr.evaluate_gradient([1.0, 1.0])
+    assert list(second) == [22.0, 8.0]
 
 
 # ---------------- bounds ----------------
