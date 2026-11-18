@@ -12,6 +12,7 @@
 
 """Quadratic expression interface."""
 
+import warnings
 from collections import defaultdict
 from typing import Any, cast
 
@@ -24,7 +25,7 @@ from ..infinity import INFINITY
 from .linear_expression import ExpressionBounds, Representation
 from .optimization_problem_element import OptimizationProblemElement
 
-_SPARSE_2D_CONSTRUCTORS: dict[Representation, type] = {
+_SPARSE_2D_CONSTRUCTORS: dict[Representation, type[sparray]] = {
     Representation.COO: coo_array,
     Representation.DOK: dok_array,
     Representation.CSR: csr_array,
@@ -104,7 +105,17 @@ class QuadraticExpression(OptimizationProblemElement):
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
         if isinstance(self._coefficients, coo_array):
-            self._coefficients = self._coefficients.todok()
+            warnings.warn(
+                "Setting a single coefficient on a COO-represented QuadraticExpression "
+                "converts the whole matrix to DOK and back, which is inefficient for "
+                "repeated assignment; use Representation.DOK instead if you need to set "
+                "many individual coefficients.",
+                stacklevel=2,
+            )
+            dok = self._coefficients.todok()
+            dok[min(i, j), max(i, j)] = value
+            self._coefficients = coo_array(dok)
+            return
         self._coefficients[min(i, j), max(i, j)] = value
 
     def _coeffs_to_representation(
@@ -161,6 +172,9 @@ class QuadraticExpression(OptimizationProblemElement):
                     f"The coefficient numpy array for the quadratic expression must be a (n, n) "
                     f"matrix with shape ({n}, {n}) matching the number of variables."
                 )
+            if self._representation == Representation.DENSE:
+                folded = np.triu(coefficients) + np.tril(coefficients, -1).T
+                return np.ascontiguousarray(folded, dtype=np.float64)
             dok = dok_array(coefficients)
         elif isinstance(coefficients, sparray | spmatrix):
             if coefficients.ndim != 2 or coefficients.shape != (n, n):
@@ -270,8 +284,6 @@ class QuadraticExpression(OptimizationProblemElement):
         if isinstance(coeffs, ndarray):
             rows, cols = np.nonzero(coeffs)
             items = ((int(i), int(j), float(coeffs[i, j])) for i, j in zip(rows, cols, strict=True))
-        elif isinstance(coeffs, dok_array):
-            items = ((int(i), int(j), float(v)) for (i, j), v in coeffs.items())
         else:
             coo = coeffs.tocoo()
             items = (
