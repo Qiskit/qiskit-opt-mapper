@@ -87,11 +87,18 @@ def _objective_to_ising(
         linear = objective.linear.coefficients.tocoo()
         lin_idx = linear.coords[0]
         lin_coef = linear.data * sense
-    quadratic = objective.quadratic.coefficients.tocoo()
-    diag = quadratic.row == quadratic.col
-    quad_idx = np.column_stack((quadratic.row, quadratic.col))[~diag]
-    quad_coef = quadratic.data[~diag] * sense
-    diag_idx, diag_coef = quadratic.row[diag], quadratic.data[diag] * sense
+    if isinstance(objective.quadratic.coefficients, np.ndarray):
+        diag_idx = np.arange(num_vars)
+        diag_coef = np.diag(objective.quadratic.coefficients) * sense
+        triu_r, triu_c = np.nonzero(np.triu(objective.quadratic.coefficients, 1))
+        quad_idx = np.column_stack((triu_r, triu_c))
+        quad_coef = objective.quadratic.coefficients[triu_r, triu_c] * sense
+    else:
+        quadratic = objective.quadratic.coefficients.tocoo()
+        diag = quadratic.row == quadratic.col
+        quad_idx = np.column_stack((quadratic.row, quadratic.col))[~diag]
+        quad_coef = quadratic.data[~diag] * sense
+        diag_idx, diag_coef = quadratic.row[diag], quadratic.data[diag] * sense
 
     # Each block holds the variable indices of a set of Pauli Z strings, one row per
     # string, and their coefficients. A variable appearing twice in a row cancels out.

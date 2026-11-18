@@ -17,12 +17,19 @@ from typing import Any, cast
 
 import numpy as np
 from numpy import ndarray
-from scipy.sparse import coo_array, dok_array, issparse, sparray, spmatrix, tril, triu
+from scipy.sparse import coo_array, csc_array, csr_array, dok_array, sparray, spmatrix, tril, triu
 
 from ..exceptions import OptimizationError
 from ..infinity import INFINITY
-from .linear_expression import ExpressionBounds
+from .linear_expression import ExpressionBounds, Representation
 from .optimization_problem_element import OptimizationProblemElement
+
+_SPARSE_2D_CONSTRUCTORS: dict[Representation, type] = {
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+    Representation.CSC: csc_array,
+}
 
 
 class QuadraticExpression(OptimizationProblemElement):
@@ -38,21 +45,32 @@ class QuadraticExpression(OptimizationProblemElement):
             | list[list[float]]
             | dict[tuple[str | int, str | int], float]
         ),
+        representation: Representation = Representation.DENSE,
     ) -> None:
         """Creates a new quadratic expression.
 
         The quadratic expression can be defined via an array, a list, a sparse matrix, or a
-        dictionary that uses variable names or indices as keys and stores the values internally as a
-        dok_array. We stores values in a compressed way, i.e., values at symmetric positions are
-        summed up in the upper triangle. For example, {(0, 1): 1, (1, 0): 2} -> {(0, 1): 3}.
+        dictionary that uses variable names or indices as keys and stores the values internally
+        according to ``representation``. Values are stored in a compressed way, i.e., values at
+        symmetric positions are summed up in the upper triangle. For example,
+        {(0, 1): 1, (1, 0): 2} -> {(0, 1): 3}.
 
         Args:
             optimization_problem: The parent OptimizationProblem.
             coefficients: The (sparse) representation of the coefficients.
+            representation: The internal storage representation. Fixed for the life of the object.
 
         """
         super().__init__(optimization_problem)
+        self._representation = representation
+        self._coefficients: ndarray | sparray
+        self._gradient_cache: ndarray | sparray | None = None
         self.coefficients = coefficients
+
+    @property
+    def representation(self) -> Representation:
+        """Returns the internal storage representation of the quadratic expression."""
+        return self._representation
 
     def __getitem__(self, key: tuple[str | int, str | int]) -> float:
         """Returns the coefficient where i, j can be a variable names or indices.
@@ -69,7 +87,10 @@ class QuadraticExpression(OptimizationProblemElement):
             i = self.optimization_problem.variables_index[i]
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
-        return float(self.coefficients[min(i, j), max(i, j)])
+        coefficients = self.coefficients
+        if isinstance(coefficients, coo_array):
+            coefficients = coefficients.tocsr()
+        return float(coefficients[min(i, j), max(i, j)])
 
     def __setitem__(self, key: tuple[str | int, str | int], value: float) -> None:
         """Sets the coefficient where i, j can be a variable names or indices.
@@ -83,9 +104,12 @@ class QuadraticExpression(OptimizationProblemElement):
             i = self.optimization_problem.variables_index[i]
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
-        self.coefficients[min(i, j), max(i, j)] = value
+        if isinstance(self._coefficients, coo_array):
+            self._coefficients = self._coefficients.todok()
+        self._coefficients[min(i, j), max(i, j)] = value
+        self._gradient_cache = None
 
-    def _coeffs_to_dok_array(
+    def _coeffs_to_representation(
         self,
         coefficients: (
             ndarray
@@ -94,21 +118,22 @@ class QuadraticExpression(OptimizationProblemElement):
             | list[list[float]]
             | dict[tuple[str | int, str | int], float]
         ),
-    ) -> dok_array:
-        """Maps given coefficients to a dok_array.
+    ) -> ndarray | sparray:
+        """Maps given coefficients to this expression's storage representation.
 
         Args:
             coefficients: The coefficients to be mapped.
 
 
         Returns:
-            The given coefficients as a dok_array
+            The given coefficients cast to this expression's representation.
 
         Raises:
             OptimizationError: if coefficients are given in unsupported format.
         """
+        n = self.optimization_problem.get_num_vars()
 
-        def _dict_to_dok(n: int, coeffs: dict[tuple[int, int], float]) -> dok_array:
+        def _dict_to_dok(coeffs: dict[tuple[int, int], float]) -> dok_array:
             if coeffs:
                 rows, cols, values = zip(*((i, j, v) for (i, j), v in coeffs.items()), strict=True)
                 ret = dok_array(coo_array((values, (rows, cols)), shape=(n, n)).todok())
@@ -117,7 +142,6 @@ class QuadraticExpression(OptimizationProblemElement):
             return ret
 
         if isinstance(coefficients, list):
-            n = self.optimization_problem.get_num_vars()
             coeffs = defaultdict(float)
             if len(coefficients) != n:
                 raise OptimizationError(
@@ -132,30 +156,37 @@ class QuadraticExpression(OptimizationProblemElement):
                     )
                 for j, value in enumerate(row):
                     coeffs[i, j] = value
-            coefficients = _dict_to_dok(n, coeffs)
+            dok = _dict_to_dok(coeffs)
         elif isinstance(coefficients, ndarray):
-            n = self.optimization_problem.get_num_vars()
             if coefficients.ndim != 2 or coefficients.shape != (n, n):
                 raise OptimizationError(
                     f"The coefficient numpy array for the quadratic expression must be a (n, n) "
                     f"matrix with shape ({n}, {n}) matching the number of variables."
                 )
-            coefficients = dok_array(coefficients)
-        elif issparse(coefficients):
-            coefficients = dok_array(coefficients)
+            dok = dok_array(coefficients)
+        elif isinstance(coefficients, sparray | spmatrix):
+            if coefficients.ndim != 2 or coefficients.shape != (n, n):
+                raise OptimizationError(
+                    f"The coefficient sparse matrix for the quadratic expression must be a (n, n) "
+                    f"matrix with shape ({n}, {n}) matching the number of variables."
+                )
+            dok = dok_array(coefficients)
         elif isinstance(coefficients, dict):
-            n = self.optimization_problem.get_num_vars()
             coeffs = defaultdict(float)
             for (i, j), value in coefficients.items():  # type: ignore
                 i_idx = self.optimization_problem.variables_index[i] if isinstance(i, str) else i
                 j_idx = self.optimization_problem.variables_index[j] if isinstance(j, str) else j
                 if i_idx > j_idx:
-                    i_idx, j_idx = i_idx, j_idx
+                    i_idx, j_idx = j_idx, i_idx
                 coeffs[i_idx, j_idx] += value
-            coefficients = _dict_to_dok(n, coeffs)
+            dok = _dict_to_dok(coeffs)
         else:
             raise OptimizationError(f"Unsupported format for coefficients: {coefficients}")
-        return self._triangle_matrix(coefficients)
+
+        folded = self._triangle_matrix(dok)
+        if self._representation == Representation.DENSE:
+            return np.ascontiguousarray(folded.toarray(), dtype=np.float64)
+        return _SPARSE_2D_CONSTRUCTORS[self._representation](folded)
 
     @staticmethod
     def _triangle_matrix(mat: dok_array) -> dok_array:
@@ -164,13 +195,27 @@ class QuadraticExpression(OptimizationProblemElement):
         return (mat + lower.transpose() - lower).todok()
 
     @staticmethod
-    def _symmetric_matrix(mat: dok_array) -> dok_array:
+    def _symmetric_matrix(mat: ndarray | sparray) -> ndarray | sparray:
+        """Returns the upper-triangle-compressed ``mat`` expanded into symmetric form."""
+        if isinstance(mat, ndarray):
+            upper = np.triu(mat, 1) / 2
+            return mat + upper.T - upper
         upper = triu(mat, 1, format="dok") / 2
-        # `todok` is necessary because subtraction results in other format
-        return (mat + upper.transpose() - upper).todok()
+        # `asformat` is necessary because subtraction results in other format
+        return (mat + upper.transpose() - upper).asformat(mat.format)
+
+    def _gradient_matrix(self) -> ndarray | sparray:
+        """Returns ``Q + Q.T`` for the gradient, caching it until the coefficients change."""
+        if self._gradient_cache is None:
+            mat = self._coefficients
+            if isinstance(mat, ndarray):
+                self._gradient_cache = mat + mat.T
+            else:
+                self._gradient_cache = (mat.transpose() + mat).asformat(mat.format)
+        return self._gradient_cache
 
     @property
-    def coefficients(self) -> dok_array:
+    def coefficients(self) -> ndarray | sparray:
         """Returns the coefficients of the quadratic expression.
 
         Returns:
@@ -194,7 +239,8 @@ class QuadraticExpression(OptimizationProblemElement):
         Args:
             coefficients: The coefficients of the quadratic expression.
         """
-        self._coefficients = self._coeffs_to_dok_array(coefficients)
+        self._coefficients = self._coeffs_to_representation(coefficients)
+        self._gradient_cache = None
 
     def to_array(self, symmetric: bool = False) -> ndarray:
         """Returns the coefficients of the quadratic expression as array.
@@ -207,6 +253,8 @@ class QuadraticExpression(OptimizationProblemElement):
             An array with the coefficients corresponding to the quadratic expression.
         """
         coeffs = self._symmetric_matrix(self._coefficients) if symmetric else self._coefficients
+        if isinstance(coeffs, ndarray):
+            return cast(ndarray, coeffs.copy())
         return cast(ndarray, coeffs.toarray())
 
     def to_dict(
@@ -225,15 +273,22 @@ class QuadraticExpression(OptimizationProblemElement):
             An dictionary with the coefficients corresponding to the quadratic expression.
         """
         coeffs = self._symmetric_matrix(self._coefficients) if symmetric else self._coefficients
+        if isinstance(coeffs, ndarray):
+            rows, cols = np.nonzero(coeffs)
+            items = ((int(i), int(j), float(coeffs[i, j])) for i, j in zip(rows, cols, strict=True))
+        elif isinstance(coeffs, dok_array):
+            items = ((int(i), int(j), float(v)) for (i, j), v in coeffs.items())
+        else:
+            coo = coeffs.tocoo()
+            items = (
+                (int(i), int(j), float(v))
+                for i, j, v in zip(coo.coords[0], coo.coords[1], coo.data, strict=True)
+            )
+
         if use_name:
-            return {
-                (
-                    self.optimization_problem.variables[i].name,
-                    self.optimization_problem.variables[j].name,
-                ): v
-                for (i, j), v in coeffs.items()
-            }
-        return {(int(i), int(j)): v for (i, j), v in coeffs.items()}
+            variables = self.optimization_problem.variables
+            return {(variables[i].name, variables[j].name): v for i, j, v in items}
+        return {(i, j): v for i, j, v in items}
 
     def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float:
         """Evaluate the quadratic expression for given variables: x * Q * x.
@@ -265,13 +320,13 @@ class QuadraticExpression(OptimizationProblemElement):
         """
         x = self._cast_as_array(x)
 
-        # compute (Q' + Q) * x for the quadratic expression
-        val = (self.coefficients.transpose() + self.coefficients) @ x
+        # compute (Q' + Q) * x for the quadratic expression, reusing the cached gradient matrix
+        val = self._gradient_matrix() @ x
 
         # return the result
         return cast(ndarray, val)
 
-    def _cast_as_array(self, x: ndarray | list | dict[str | int, float]) -> dok_array | np.ndarray:
+    def _cast_as_array(self, x: ndarray | list | dict[str | int, float]) -> np.ndarray:
         """Converts input to an array if it is a dictionary or list."""
         if isinstance(x, dict):
             x_aux = np.zeros(self.optimization_problem.get_num_vars())

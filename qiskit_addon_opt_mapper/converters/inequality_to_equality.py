@@ -346,7 +346,7 @@ class InequalityToEquality(OptimizationProblemConverter):
                     internal=True,
                 )
             new_linear[slack_name] = sign
-        return new_linear, quadratic.coefficients, "==", new_rhs, name
+        return new_linear, quadratic.to_dict(use_name=True), "==", new_rhs, name
 
     def _add_slack_var_higher_order_constraint(self, constraint: HigherOrderConstraint):
         higher_order = constraint.higher_order
@@ -425,7 +425,7 @@ class InequalityToEquality(OptimizationProblemConverter):
             degree: expr.to_dict(use_name=True)  # type: ignore
             for degree, expr in higher_order.items()  # type: ignore
         }
-        return new_linear, quadratic.coefficients, higher_order, "==", new_rhs, name
+        return new_linear, quadratic.to_dict(use_name=True), higher_order, "==", new_rhs, name
 
     def interpret(self, x: np.ndarray | list[float]) -> np.ndarray:
         """Convert a result of a converted problem into that of the original problem.

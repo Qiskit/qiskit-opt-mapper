@@ -1,0 +1,10 @@
+---
+features:
+  - |
+    :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` now accepts a
+    ``representation`` constructor argument, mirroring
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`, allowing the internal
+    storage format of a quadratic expression's coefficients to be chosen explicitly
+    (``DENSE``, ``COO``, ``DOK``, ``CSR``, or ``CSC``). The chosen representation is
+    fixed for the lifetime of the object and exposed via the new read-only
+    ``QuadraticExpression.representation`` property.
