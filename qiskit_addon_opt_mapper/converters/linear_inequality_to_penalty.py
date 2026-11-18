@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -21,7 +21,6 @@ import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint, ConstraintSense
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
@@ -212,10 +211,14 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
                 ho_constraint.name,
             )
 
-        if problem.objective.sense == OptimizationObjective.Sense.MINIMIZE:  # type: ignore
-            self._dst.minimize(offset, linear, quadratic, ho)  # type: ignore
-        else:
-            self._dst.maximize(offset, linear, quadratic, ho)  # type: ignore
+        self._dst._append_or_set_objective_from_parts(
+            problem.objective.sense,
+            constant=offset,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=ho,  # type: ignore[arg-type]
+            name=problem.objective.name,
+        )
 
         # Update the penalty to the one just used
         self._penalty = penalty

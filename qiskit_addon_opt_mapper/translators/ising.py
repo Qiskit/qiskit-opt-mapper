@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -18,6 +18,8 @@ import numpy as np
 from qiskit.quantum_info import PauliList, SparsePauliOp
 
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
+from qiskit_addon_opt_mapper.problems.base_optimization_problem import BaseOptimizationProblem
+from qiskit_addon_opt_mapper.problems.optimization_objective import OptimizationObjective
 from qiskit_addon_opt_mapper.problems.optimization_problem import OptimizationProblem
 
 
@@ -48,8 +50,28 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
             "to convert constraints to penalty terms of the objective function."
         )
 
-    num_vars = optimization_problem.get_num_vars()
-    objective = optimization_problem.objective
+    return _objective_to_ising(optimization_problem, optimization_problem.objective)
+
+
+def _objective_to_ising(
+    problem: BaseOptimizationProblem, objective: OptimizationObjective
+) -> tuple[SparsePauliOp, float]:
+    """Return the Ising Hamiltonian of one objective of a problem.
+
+    The caller is responsible for checking that the problem has no constraints.
+
+    Args:
+        problem: The problem that provides the variables.
+        objective: The objective to be translated.
+
+    Returns:
+        A tuple (qubit_op, offset) comprising the qubit operator for the objective
+        and offset for the constant value in the Ising Hamiltonian.
+
+    Raises:
+        OptimizationError: If variables are neither only binary nor only spin.
+    """
+    num_vars = problem.get_num_vars()
 
     # set a sign corresponding to a maximized or minimized problem.
     # sign == 1 is for minimized problem. sign == -1 is for maximized problem.
@@ -70,7 +92,7 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
     # string, and their coefficients. A variable appearing twice in a row cancels out.
     blocks: list[tuple[np.ndarray, np.ndarray]] = []
 
-    if num_vars == optimization_problem.get_num_binary_vars():
+    if num_vars == problem.get_num_binary_vars():
         # if all variables are binary variables, substitute x = (1 - z) / 2.
         # Linear terms x_i = x_i^2 come from both the linear and the diagonal quadratic
         # part. Each off-diagonal quadratic term x_i x_j contributes to Z_i and Z_j.
@@ -100,7 +122,7 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
                     blocks.append((indices[:, comb], weight))
             offset += values.sum() / 2**degree
 
-    elif num_vars == optimization_problem.get_num_spin_vars():
+    elif num_vars == problem.get_num_spin_vars():
         # if all variables are spin variables, z_i^2 = 1 goes into the offset.
         blocks.append((lin_idx[:, None], lin_coef))
         blocks.append((quad_idx, quad_coef))
@@ -129,8 +151,13 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
         return SparsePauliOp("I" * max(1, num_vars), 0), float(offset)
 
     z = np.concatenate([_z_mask(num_vars, idx) for idx, _ in blocks])[keep]
+
+    # The operator has only Z strings, so there is no Pauli phase for qiskit to work out.
     qubit_op = SparsePauliOp(
-        PauliList.from_symplectic(z, np.zeros_like(z)), coeffs[keep].astype(complex)
+        PauliList.from_symplectic(z, np.zeros_like(z)),
+        coeffs[keep].astype(complex),
+        ignore_pauli_phase=True,
+        copy=False,
     )
     if objective.higher_order:
         # Higher order terms may repeat a Pauli string, so combine them and drop zeros.

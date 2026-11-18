@@ -507,10 +507,67 @@ class TestPrettyprint(OptimizationTestCase):
             self.assertEqual(prettyprint(q_p, wrap), expected)
             self.assertEqual(q_p.prettyprint(wrap), expected)
 
+    def test_objective_name(self):
+        """Test that a named objective is printed like constraint names, and unnamed is unchanged"""
+
+        with self.subTest("minimize named"):
+            q_p = OptimizationProblem("test")
+            q_p.binary_var(name="x")
+            q_p.binary_var(name="y")
+            q_p.minimize(linear={"x": 1}, quadratic={("x", "y"): 1}, name="cost")
+            expected = "\n".join(
+                [
+                    "Problem name: test",
+                    "",
+                    "Minimize",
+                    "  x*y + x 'cost'",
+                    "",
+                    "Subject to",
+                    "  No constraints",
+                    "",
+                    "  Binary variables (2)",
+                    "    x y",
+                    "",
+                ]
+            )
+            self.assertEqual(prettyprint(q_p), expected)
+            self.assertEqual(q_p.prettyprint(), expected)
+
+        with self.subTest("maximize named, constant only"):
+            q_p = OptimizationProblem("test")
+            q_p.maximize(constant=3, name="profit")
+            self.assertIn("Maximize\n  3 'profit'\n", prettyprint(q_p))
+
+        with self.subTest("unnamed objective has no suffix"):
+            q_p = OptimizationProblem("test")
+            q_p.binary_var(name="x")
+            q_p.minimize(linear={"x": 1})
+            self.assertIn("Minimize\n  x\n", prettyprint(q_p))
+            self.assertNotIn("''", prettyprint(q_p))
+
+        with self.subTest("wrapped objective keeps name at the end"):
+            q_p = OptimizationProblem("test")
+            for i in range(6):
+                q_p.binary_var(name=f"x{i}")
+            q_p.minimize(linear={f"x{i}": 1 for i in range(6)}, name="cost")
+            self.assertIn(
+                "Minimize\n  x0 + x1 + x2 + x3\n  + x4 + x5 'cost'\n", prettyprint(q_p, 20)
+            )
+
     def test_error(self):
         """Test error case due to non-printable names"""
 
         name = "\n"
+        with self.subTest("objective name - func"), self.assertRaises(OptimizationError):
+            q_p = OptimizationProblem()
+            q_p.minimize(name=name)
+            _ = prettyprint(q_p)
+
+        with self.subTest("objective name - meth"), self.assertRaises(OptimizationError):
+            q_p = OptimizationProblem()
+            q_p.minimize(name=name)
+            _ = q_p.prettyprint()
+
         with self.subTest("problem name - func"), self.assertRaises(OptimizationError):
             q_p = OptimizationProblem(name)
             _ = prettyprint(q_p)

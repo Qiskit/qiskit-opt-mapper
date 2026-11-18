@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -13,6 +13,7 @@
 """Test from_gurobipy and to_gurobipy"""
 
 import unittest
+import unittest.mock
 from os import path
 from tempfile import TemporaryDirectory
 
@@ -105,6 +106,35 @@ class TestGurobiTranslator(OptimizationTestCase):
             self.assertDictEqual(c.linear.to_dict(use_name=True), {"C2": -1})
             self.assertDictEqual(c.quadratic.to_dict(use_name=True), {("C0", "C1"): 1})
             self.assertEqual(c.sense, senses[i])
+
+    @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
+    def test_all_zero_constraints_with_rhs_zero_are_skipped(self):
+        """test that all-zero constraints with rhs == 0 are skipped in to_gurobipy"""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var(name="x")
+        q_p.linear_constraint(sense="==", rhs=0.0)
+        q_p.quadratic_constraint(sense="==", rhs=0.0)
+        mod = to_gurobipy(q_p)
+        mod.update()
+        self.assertEqual(mod.NumConstrs, 0)
+        self.assertEqual(mod.NumQConstrs, 0)
+
+    @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
+    def test_from_gurobipy_raises_on_unsupported_objective_type(self):
+        """from_gurobipy() raises OptimizationError for an objective that is neither
+        a LinExpr nor a QuadExpr (e.g. a nonlinear NLExpr or any other object)."""
+        # pylint: disable=import-error
+        import gurobipy as gp
+
+        mod = gp.Model()
+        mod.addVar(vtype=gp.GRB.BINARY, name="x")
+        # gurobipy.Model is a C-extension type, so getObjective can't be monkeypatched on the
+        # instance; patch the class method instead.
+        with (
+            unittest.mock.patch.object(gp.Model, "getObjective", lambda self: object()),
+            self.assertRaises(OptimizationError),
+        ):
+            _ = from_gurobipy(mod)
 
 
 if __name__ == "__main__":

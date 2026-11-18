@@ -1,0 +1,17 @@
+---
+features:
+  - |
+    The converters
+    :class:`~qiskit_addon_opt_mapper.converters.BinaryToLinearBinary`,
+    :class:`~qiskit_addon_opt_mapper.converters.BinaryToSpin`,
+    :class:`~qiskit_addon_opt_mapper.converters.EqualityToPenalty`,
+    :class:`~qiskit_addon_opt_mapper.converters.InequalityToEquality`,
+    :class:`~qiskit_addon_opt_mapper.converters.IntegerToBinary`,
+    :class:`~qiskit_addon_opt_mapper.converters.LinearInequalityToPenalty` and
+    :class:`~qiskit_addon_opt_mapper.converters.SpinToBinary`,
+    as well as
+    :meth:`~qiskit_addon_opt_mapper.OptimizationProblem.substitute_variables`,
+    now keep the name of the objective. Previously the converted problem
+    always had an unnamed objective. Problems with an unnamed objective convert exactly as before.
+    The translators (for example ``to_docplex_mp`` and ``from_gurobipy``) do not carry the
+    objective name.

@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -106,10 +106,12 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
         obj_lin_dict = self._convert_expr(
             problem.objective.linear, problem.objective.quadratic, problem.objective.higher_order
         )
-        if problem.objective.sense == problem.objective.Sense.MINIMIZE:
-            self._dst.minimize(problem.objective.constant, obj_lin_dict)  # type: ignore
-        else:
-            self._dst.maximize(problem.objective.constant, obj_lin_dict)  # type: ignore
+        self._dst._append_or_set_objective_from_parts(
+            problem.objective.sense,
+            constant=problem.objective.constant,
+            linear=obj_lin_dict,
+            name=problem.objective.name,
+        )
 
         # 4) Constraints
         for lc in problem.linear_constraints:

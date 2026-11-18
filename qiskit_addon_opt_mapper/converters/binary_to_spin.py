@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -17,7 +17,6 @@ import copy
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_objective import OptimizationObjective
 from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
@@ -195,10 +194,14 @@ class BinaryToSpin(OptimizationProblemConverter):
         c0 += obj.constant
 
         # Dump to dst objective
-        if obj.sense == OptimizationObjective.Sense.MINIMIZE:
-            self._dst.minimize(c0, ldict, qdict, hdict)
-        else:
-            self._dst.maximize(c0, ldict, qdict, hdict)
+        self._dst._append_or_set_objective_from_parts(
+            obj.sense,
+            constant=c0,
+            linear=ldict,
+            quadratic=qdict,
+            higher_order=hdict,
+            name=obj.name,
+        )
 
     def _emit_constraint_from_poly(self, name: str, sense, rhs: float, poly: Poly) -> None:
         """Emit a constraint to the destination problem from a polynomial form."""
