@@ -17,6 +17,7 @@ import unittest
 import numpy as np
 from qiskit_addon_opt_mapper import OptimizationProblem
 from qiskit_addon_opt_mapper.converters import MaximizeToMinimize, MinimizeToMaximize
+from qiskit_addon_opt_mapper.problems import Representation
 
 from ..optimization_test_case import OptimizationTestCase
 
@@ -135,6 +136,31 @@ class TestFlipProblemSense(OptimizationTestCase):
 
         self.assertIsInstance(op_conv.objective.linear.coefficients, np.ndarray)
         self.assertIsInstance(op_conv.objective.quadratic.coefficients, np.ndarray)
+        self.assertEqual(op_conv.objective.linear.to_dict(), {0: -1.0, 1: -2.0})
+        self.assertEqual(op_conv.objective.quadratic.to_dict(), {(0, 1): -3.0})
+
+    def test_flip_preserves_non_default_representation(self):
+        """Flipping sense must not silently reset a non-default linear/quadratic representation.
+
+        `_FlipProblemSense` reassigns `objective.linear`/`objective.quadratic` through their
+        setters, which used to always rebuild a DENSE-represented expression regardless of the
+        original representation.
+        """
+        op = OptimizationProblem()
+        for i in range(2):
+            op.binary_var(name=f"x{i}")
+        op.maximize(
+            linear={"x0": 1, "x1": 2},
+            quadratic={("x0", "x1"): 3},
+            linear_representation=Representation.CSR,
+            quadratic_representation=Representation.CSR,
+        )
+
+        conv = MaximizeToMinimize()
+        op_conv = conv.convert(op)
+
+        self.assertEqual(op_conv.objective.linear.representation, Representation.CSR)
+        self.assertEqual(op_conv.objective.quadratic.representation, Representation.CSR)
         self.assertEqual(op_conv.objective.linear.to_dict(), {0: -1.0, 1: -2.0})
         self.assertEqual(op_conv.objective.quadratic.to_dict(), {(0, 1): -3.0})
 

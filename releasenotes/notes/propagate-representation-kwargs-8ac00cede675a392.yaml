@@ -14,3 +14,13 @@ features:
     and the constructors of
     :class:`~qiskit_addon_opt_mapper.problems.OptimizationObjective` and
     :class:`~qiskit_addon_opt_mapper.problems.HigherOrderConstraint`.
+fixes:
+  - |
+    :attr:`~qiskit_addon_opt_mapper.problems.OptimizationObjective.linear` and
+    :attr:`~qiskit_addon_opt_mapper.problems.OptimizationObjective.quadratic` no longer
+    silently reset the representation to ``DENSE`` when reassigned through their public
+    setters. This previously caused converters that reassign these attributes, such as
+    the sense-flipping converters used by
+    :class:`~qiskit_addon_opt_mapper.converters.MaximizeToMinimize` and
+    :class:`~qiskit_addon_opt_mapper.converters.MinimizeToMaximize`, to downgrade a
+    non-default representation chosen by the caller.

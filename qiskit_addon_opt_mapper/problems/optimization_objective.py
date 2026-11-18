@@ -159,7 +159,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             linear: The linear coefficients of the left-hand-side.
         """
-        self._linear = LinearExpression(self.optimization_problem, linear)
+        self._linear = LinearExpression(
+            self.optimization_problem, linear, representation=self._linear.representation
+        )
 
     @property
     def quadratic(self) -> QuadraticExpression:
@@ -186,7 +188,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             quadratic: The quadratic coefficients of the left-hand-side.
         """
-        self._quadratic = QuadraticExpression(self.optimization_problem, quadratic)
+        self._quadratic = QuadraticExpression(
+            self.optimization_problem, quadratic, representation=self._quadratic.representation
+        )
 
     @property
     def higher_order(self) -> dict[int, HigherOrderExpression]:
