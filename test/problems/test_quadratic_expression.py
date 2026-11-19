@@ -113,6 +113,16 @@ def test_accepts_sparse_n_by_n_and_normalizes(sparse_fmt, representation):
     assert expr[1, 1] == 2.0
 
 
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_coo_with_duplicate_and_mirrored_entries(representation):
+    n = 3
+    # duplicate (0, 1) entries and a mirrored (1, 0) entry must all be summed into [0, 1]
+    coo = coo_array(([2.0, 3.0, 4.0], ([0, 0, 1], [1, 1, 0])), shape=(n, n))
+
+    expr = MAKE_INSTANCE(coo, nvars=n, representation=representation)
+    assert expr.to_dict() == {(0, 1): 9.0}
+
+
 # ---------------- error/exception cases ----------------
 
 
@@ -204,7 +214,7 @@ def test_accepts_dict_with_name_keys():
 # ---------------- getitem / setitem ----------------
 
 
-@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.filterwarnings("ignore:Setting a single coefficient:UserWarning")
 @pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
 @pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
 def test_getitem_setitem_with_indices(representation):
