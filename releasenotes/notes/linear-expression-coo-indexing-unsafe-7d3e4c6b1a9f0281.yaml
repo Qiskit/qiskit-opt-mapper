@@ -1,5 +1,5 @@
 ---
-known_issues:
+issues:
   - |
     Scalar element access on a :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`
     with ``representation=Representation.COO`` (``expr[i]`` and ``expr[i] = v``) is unsafe:
