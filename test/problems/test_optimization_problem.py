@@ -1061,6 +1061,85 @@ class TestOptimizationProblem(OptimizationTestCase):
         self.assertEqual("c3", constraints[1].name)
         self.assertEqual("c5", constraints[2].name)
 
+    def test_feasibility_inequality_tolerance(self):
+        """Tests that feasibility checks tolerate tiny numerical violations."""
+        q_p = OptimizationProblem("test")
+        _ = q_p.continuous_var(-10, 10, "x")
+        _ = q_p.continuous_var(-10, 10, "z")
+        _ = q_p.continuous_var(-10, 10, "y")
+        _ = q_p.continuous_var(-10, 10, "w")
+        q_p.linear_constraint({"x": 1}, "<=", 5, "c0")
+        q_p.linear_constraint({"x": 1}, ">=", -5, "c1")
+        q_p.linear_constraint({"z": 1}, "<=", 0, "c_zero_le")
+        q_p.linear_constraint({"z": 1}, ">=", 0, "c_zero_ge")
+        q_p.quadratic_constraint(None, {("y", "y"): 1}, "<=", 0, "c_quad")
+        q_p.higher_order_constraint(
+            higher_order={3: {(3, 3, 3): 1.0}}, sense="<=", rhs=0, name="c_ho"
+        )
+
+        def info(x_val, z_val, y_val, w_val):
+            return q_p.get_feasibility_info([x_val, z_val, y_val, w_val])
+
+        with self.subTest("linear: within tolerance of a non-zero bound is feasible"):
+            self.assertTrue(q_p.is_feasible([5 + 1e-10, 0, 0, 0]))
+            self.assertTrue(q_p.is_feasible([-5 - 1e-10, 0, 0, 0]))
+
+        with self.subTest("linear: clearly beyond a non-zero bound is infeasible"):
+            self.assertFalse(q_p.is_feasible([5.1, 0, 0, 0]))
+            self.assertFalse(q_p.is_feasible([-5.1, 0, 0, 0]))
+
+        with self.subTest("linear: within tolerance of a zero bound is feasible"):
+            feasible, variables, constraints = info(0, 1e-10, 0, 0)
+            self.assertTrue(feasible)
+            self.assertEqual([], variables)
+            self.assertEqual([], constraints)
+
+        with self.subTest("linear: clearly beyond a zero bound is infeasible"):
+            feasible, _, constraints = info(0, 0.1, 0, 0)
+            self.assertFalse(feasible)
+            self.assertIn("c_zero_le", [c.name for c in constraints])
+
+        with self.subTest("quadratic: within tolerance of a zero bound is feasible"):
+            feasible, _, constraints = info(0, 0, 1e-5, 0)
+            self.assertNotIn("c_quad", [c.name for c in constraints])
+
+        with self.subTest("quadratic: clearly beyond a zero bound is infeasible"):
+            feasible, _, constraints = info(0, 0, 1, 0)
+            self.assertIn("c_quad", [c.name for c in constraints])
+
+        with self.subTest("higher-order: within tolerance of a zero bound is feasible"):
+            feasible, _, constraints = info(0, 0, 0, 1e-4)
+            self.assertNotIn("c_ho", [c.name for c in constraints])
+
+        with self.subTest("higher-order: clearly beyond a zero bound is infeasible"):
+            feasible, _, constraints = info(0, 0, 0, 1)
+            self.assertIn("c_ho", [c.name for c in constraints])
+
+    def test_feasibility_variable_bound_tolerance(self):
+        """Tests that variable bound checks tolerate tiny numerical violations."""
+        q_p = OptimizationProblem("test")
+        _ = q_p.continuous_var(0, 10, "x")
+
+        with self.subTest("within tolerance of a zero lowerbound is feasible"):
+            feasible, variables, _ = q_p.get_feasibility_info([-1e-10])
+            self.assertTrue(feasible)
+            self.assertEqual([], variables)
+
+        with self.subTest("within tolerance of a non-zero upperbound is feasible"):
+            feasible, variables, _ = q_p.get_feasibility_info([10 + 1e-10])
+            self.assertTrue(feasible)
+            self.assertEqual([], variables)
+
+        with self.subTest("clearly beyond the lowerbound is infeasible"):
+            feasible, variables, _ = q_p.get_feasibility_info([-0.1])
+            self.assertFalse(feasible)
+            self.assertEqual(["x"], [v.name for v in variables])
+
+        with self.subTest("clearly beyond the upperbound is infeasible"):
+            feasible, variables, _ = q_p.get_feasibility_info([10.1])
+            self.assertFalse(feasible)
+            self.assertEqual(["x"], [v.name for v in variables])
+
     def test_empty_name(self):
         """Test empty names"""
 
