@@ -14,6 +14,7 @@
 """Optimization Problem."""
 
 import logging
+from collections.abc import Iterator
 
 from qiskit.quantum_info import SparsePauliOp
 
@@ -130,63 +131,26 @@ class OptimizationProblem(BaseOptimizationProblem):
 
         return to_ising(self)
 
-    def substitute_variables(
-        self,
-        constants: dict[str | int, float] | None = None,
-        variables: dict[str | int, tuple[str | int, float]] | None = None,
-    ) -> "OptimizationProblem":
-        """Substitutes variables with constants or other variables.
-
-        Args:
-            constants: replace variable by constant
-                e.g., ``{'x': 2}`` means ``x`` is substituted with 2
-
-            variables: replace variables by weighted other variable
-                need to copy everything using name reference to make sure that indices are matched
-                correctly. The lower and upper bounds are updated accordingly.
-                e.g., ``{'x': ('y', 2)}`` means ``x`` is substituted with ``y * 2``
-
-
-        Returns:
-            An optimization problem by substituting variables with constants or other variables.
-            If the substitution is valid, ``OptimizationProblem.status`` is still
-            ``OptimizationProblem.Status.VALID``.
-            Otherwise, it gets ``OptimizationProblem.Status.INFEASIBLE``.
-
-        Raises:
-            OptimizationError: if the substitution is invalid as follows.
-
-                - Same variable is substituted multiple times.
-                - Coefficient of variable substitution is zero.
-        """
-        # pylint: disable=cyclic-import
-        from .substitute_variables import substitute_variables
-
-        return substitute_variables(self, constants, variables)
-
-    def prettyprint(self, wrap: int = 80) -> str:
-        """Returns a pretty printed string of this problem.
-
-        Args:
-            wrap: The text width to wrap the output strings. It is disabled by setting 0.
-                Note that some strings might exceed this value, for example, a long variable
-                name won't be wrapped. The default value is 80.
-
-
-        Returns:
-            A pretty printed string representing the problem.
-
-        Raises:
-            OptimizationError: if there is a non-printable name.
-        """
-        # pylint: disable=cyclic-import
-        from qiskit_addon_opt_mapper.translators.prettyprint import prettyprint
-
-        return prettyprint(self, wrap)
-
     def _reset_objectives(self) -> None:
         """Resets the single objective of this problem to an empty one."""
         self._objective = OptimizationObjective(self)
+
+    @property
+    def is_multi_objective(self) -> bool:
+        """Whether this problem holds a collection of objectives or a single one.
+
+        Returns:
+            ``False``, since an ``OptimizationProblem`` always holds a single objective.
+        """
+        return False
+
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
+        """Iterates over the objectives of this problem.
+
+        Returns:
+            An iterator yielding the single objective of this problem.
+        """
+        yield self._objective
 
     def _objectives_repr(self) -> str:
         """Renders the objective fragment of ``__repr__``.
