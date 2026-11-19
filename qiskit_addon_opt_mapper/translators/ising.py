@@ -16,6 +16,7 @@ import itertools
 
 import numpy as np
 from qiskit.quantum_info import PauliList, SparsePauliOp
+from scipy.sparse import sparray
 
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
 from qiskit_addon_opt_mapper.problems.base_optimization_problem import BaseOptimizationProblem
@@ -80,13 +81,16 @@ def _objective_to_ising(
     # convert a constant part of the objective function into Hamiltonian.
     offset = objective.constant * sense
 
-    linear = objective.linear.coefficients.tocoo()
-    lin_idx, lin_coef = linear.col, linear.data * sense
-    quadratic = objective.quadratic.coefficients.tocoo()
-    diag = quadratic.row == quadratic.col
-    quad_idx = np.column_stack((quadratic.row, quadratic.col))[~diag]
-    quad_coef = quadratic.data[~diag] * sense
-    diag_idx, diag_coef = quadratic.row[diag], quadratic.data[diag] * sense
+    if isinstance(objective.linear.coefficients, np.ndarray):
+        lin_idx = np.nonzero(objective.linear.coefficients)[0]
+        lin_coef = objective.linear.coefficients[lin_idx] * sense
+    else:
+        linear = objective.linear.coefficients.tocoo()
+        lin_idx = linear.coords[0]
+        lin_coef = linear.data * sense
+    quad_idx, quad_coef, diag_idx, diag_coef = _quadratic_terms(
+        objective.quadratic.coefficients, sense
+    )
 
     # Each block holds the variable indices of a set of Pauli Z strings, one row per
     # string, and their coefficients. A variable appearing twice in a row cancels out.
@@ -164,6 +168,35 @@ def _objective_to_ising(
         qubit_op = qubit_op.simplify(atol=0)
 
     return qubit_op, float(offset)
+
+
+def _quadratic_terms(
+    quadratic: np.ndarray | sparray, sense: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Split a quadratic expression's coefficients into off-diagonal and diagonal terms.
+
+    Args:
+        quadratic: The (dense or sparse) coefficients of a quadratic expression.
+        sense: The sign to scale all coefficients by.
+
+    Returns:
+        A tuple (quad_idx, quad_coef, diag_idx, diag_coef) of the nonzero off-diagonal
+        term indices/coefficients and the nonzero diagonal term indices/coefficients.
+    """
+    if isinstance(quadratic, np.ndarray):
+        diag = np.diag(quadratic) * sense
+        diag_idx = np.nonzero(diag)[0]
+        diag_coef = diag[diag_idx]
+        triu_r, triu_c = np.nonzero(np.triu(quadratic, 1))
+        quad_idx = np.column_stack((triu_r, triu_c))
+        quad_coef = quadratic[triu_r, triu_c] * sense
+    else:
+        coo = quadratic.tocoo()
+        is_diag = coo.row == coo.col
+        quad_idx = np.column_stack((coo.row, coo.col))[~is_diag]
+        quad_coef = coo.data[~is_diag] * sense
+        diag_idx, diag_coef = coo.row[is_diag], coo.data[is_diag] * sense
+    return quad_idx, quad_coef, diag_idx, diag_coef
 
 
 def _z_mask(num_vars: int, indices: np.ndarray) -> np.ndarray:

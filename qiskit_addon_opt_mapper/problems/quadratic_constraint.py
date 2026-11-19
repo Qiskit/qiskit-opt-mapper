@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -15,7 +15,7 @@
 from typing import Any
 
 from numpy import ndarray
-from scipy.sparse import spmatrix
+from scipy.sparse import sparray, spmatrix
 
 from .constraint import Constraint, ConstraintSense
 from .linear_expression import LinearExpression
@@ -32,9 +32,13 @@ class QuadraticConstraint(Constraint):
         self,
         optimization_problem: Any,
         name: str,
-        linear: ndarray | spmatrix | list[float] | dict[str | int, float],
+        linear: ndarray | sparray | spmatrix | list[float] | dict[str | int, float],
         quadratic: (
-            ndarray | spmatrix | list[list[float]] | dict[tuple[str | int, str | int], float]
+            ndarray
+            | sparray
+            | spmatrix
+            | list[list[float]]
+            | dict[tuple[str | int, str | int], float]
         ),
         sense: ConstraintSense,
         rhs: float,
@@ -65,7 +69,7 @@ class QuadraticConstraint(Constraint):
     @linear.setter
     def linear(
         self,
-        linear: ndarray | spmatrix | list[float] | dict[str | int, float],
+        linear: ndarray | sparray | spmatrix | list[float] | dict[str | int, float],
     ) -> None:
         """Sets the linear expression corresponding to the left-hand-side of the constraint.
 
@@ -90,7 +94,11 @@ class QuadraticConstraint(Constraint):
     def quadratic(
         self,
         quadratic: (
-            ndarray | spmatrix | list[list[float]] | dict[tuple[str | int, str | int], float]
+            ndarray
+            | sparray
+            | spmatrix
+            | list[list[float]]
+            | dict[tuple[str | int, str | int], float]
         ),
     ) -> None:
         """Sets the quadratic expression corresponding to the left-hand-side of the constraint.

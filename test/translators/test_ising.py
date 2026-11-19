@@ -13,10 +13,17 @@
 """Test to_ising"""
 
 import numpy as np
+import pytest
 from qiskit.quantum_info import SparsePauliOp
 from qiskit_addon_opt_mapper import OptimizationError, OptimizationProblem
 from qiskit_addon_opt_mapper.converters import EqualityToPenalty
-from qiskit_addon_opt_mapper.problems import Constraint, ObjSense, OptimizationObjective
+from qiskit_addon_opt_mapper.problems import (
+    Constraint,
+    ObjSense,
+    OptimizationObjective,
+    Representation,
+)
+from qiskit_addon_opt_mapper.problems.quadratic_expression import QuadraticExpression
 from qiskit_addon_opt_mapper.translators import to_ising
 from qiskit_addon_opt_mapper.translators.ising import _objective_to_ising
 
@@ -252,3 +259,29 @@ class TestIsingTranslator(OptimizationTestCase):
         self.assertTrue(qubit_op.equiv(SparsePauliOp.from_list([("ZI", 1.0)])))
         self.assertEqual(offset, -2.0)
         self.assertEqual(to_ising(op), _objective_to_ising(op, op.objective))
+
+
+@pytest.mark.parametrize("representation", list(Representation))
+def test_objective_to_ising_quadratic_representations_agree(representation):
+    """The dense and sparse branches of `_objective_to_ising` must produce the same operator.
+
+    `OptimizationObjective` does not yet accept a quadratic representation kwarg (that is
+    tracked separately), so the quadratic part's representation is swapped in directly to
+    exercise `_objective_to_ising`'s sparse branch, which is otherwise never executed by any
+    other test in this file.
+    """
+    op = OptimizationProblem("test")
+    op.binary_var(name="x")
+    op.binary_var(name="y")
+    op.minimize(linear={"x": 1}, quadratic={("x", "y"): 1})
+    objective = op.objective
+    # pylint: disable=protected-access
+    objective._quadratic = QuadraticExpression(
+        op, objective.quadratic.to_dict(), representation=representation
+    )
+
+    qubit_op, offset = _objective_to_ising(op, objective)
+
+    op_ref = SparsePauliOp.from_list([("ZI", -0.25), ("IZ", -0.75), ("ZZ", 0.25)])
+    np.testing.assert_allclose(qubit_op.to_matrix(), op_ref.to_matrix())
+    assert offset == pytest.approx(0.75)

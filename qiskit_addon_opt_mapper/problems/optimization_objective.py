@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Any, cast
 
 from numpy import ndarray
-from scipy.sparse import spmatrix
+from scipy.sparse import sparray, spmatrix
 
 from ..exceptions import OptimizationError
 from .higher_order_expression import HigherOrderExpression
@@ -143,7 +143,7 @@ class OptimizationObjective(OptimizationProblemElement):
     @linear.setter
     def linear(
         self,
-        linear: ndarray | spmatrix | list[float] | dict[int | str, float],
+        linear: ndarray | sparray | spmatrix | list[float] | dict[int | str, float],
     ) -> None:
         """Sets the linear expression corresponding to the left-hand-side of the constraint.
 
@@ -165,7 +165,11 @@ class OptimizationObjective(OptimizationProblemElement):
     def quadratic(
         self,
         quadratic: (
-            ndarray | spmatrix | list[list[float]] | dict[tuple[int | str, int | str], float]
+            ndarray
+            | sparray
+            | spmatrix
+            | list[list[float]]
+            | dict[tuple[int | str, int | str], float]
         ),
     ) -> None:
         """Sets the quadratic expression corresponding to the left-hand-side of the constraint.
@@ -239,10 +243,7 @@ class OptimizationObjective(OptimizationProblemElement):
             The objective value given the variable values.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (
-            1,
-            n,
-        ) or self.quadratic.coefficients.shape != (n, n):
+        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"
@@ -262,10 +263,7 @@ class OptimizationObjective(OptimizationProblemElement):
             The gradient of the objective function given the variable values.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (
-            1,
-            n,
-        ) or self.quadratic.coefficients.shape != (n, n):
+        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"
