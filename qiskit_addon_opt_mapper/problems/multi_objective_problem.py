@@ -98,26 +98,15 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             OptimizationError: if the objective name already exists or the sense is not valid.
         """
         if name:
-            if name in self._objectives_index:
-                raise OptimizationError(f"Objective name already exists: {name}")
             self._check_name(name, "Objective")
-        else:
-            k = self.get_num_objectives()
-            while f"f{k}" in self._objectives_index:
-                k += 1
-            name = f"f{k}"
-        objective = OptimizationObjective(
-            self,
-            constant,
-            {} if linear is None else linear,
-            {} if quadratic is None else quadratic,
-            {} if higher_order is None else higher_order,
+        return self._append_objective(
             ObjSense.convert(sense),
-            name,
+            constant=constant,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=higher_order,
+            name=name,
         )
-        self._objectives_index[name] = len(self._objectives)
-        self._objectives.append(objective)
-        return objective
 
     def get_objective(self, i: int | str) -> OptimizationObjective:
         """Returns an objective for a given name or index.
@@ -199,7 +188,7 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
         """
         return True
 
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         """Iterates over the objectives of this problem in objective order.
 
         Returns:
@@ -238,9 +227,9 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
     ) -> None:
         """Appends an objective built from its already-assembled parts.
 
-        Unlike ``OptimizationProblem``, this method does check ``name``, because it goes through
-        :meth:`add_objective`. A non-printable name therefore warns again when an already-checked
-        objective is copied, for example by :meth:`substitute_variables`.
+        This method does not check ``name``, so that copying an already-checked objective, for
+        example in :meth:`substitute_variables`, does not repeat the warning for a non-printable
+        name. :meth:`add_objective` checks it before it appends.
 
         Args:
             sense: The sense of the objective.
@@ -251,11 +240,59 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             name: The name of the objective. The default empty string selects the next default
                 name, e.g., ``f0``.
         """
-        self.add_objective(
+        self._append_objective(
+            sense,
             constant=constant,
             linear=linear,
             quadratic=quadratic,
             higher_order=higher_order,
-            sense=sense,
             name=name,
         )
+
+    def _append_objective(
+        self,
+        sense: ObjSense,
+        *,
+        constant: float,
+        linear: LinearCoeffLike | None,
+        quadratic: QuadraticCoeffLike | None,
+        higher_order: HigherOrderCoeffLike | None,
+        name: str | None,
+    ) -> OptimizationObjective:
+        """Builds an objective and appends it without checking that ``name`` is printable.
+
+        Args:
+            sense: The sense of the objective.
+            constant: The constant part of the objective function.
+            linear: The coefficients of the linear part.
+            quadratic: The coefficients of the quadratic part.
+            higher_order: The coefficients of the higher-order part.
+            name: The name of the objective. If it is ``None`` or empty, the next default name,
+                e.g., ``f0``, is used.
+
+        Returns:
+            The appended objective.
+
+        Raises:
+            OptimizationError: if the objective name already exists.
+        """
+        if name:
+            if name in self._objectives_index:
+                raise OptimizationError(f"Objective name already exists: {name}")
+        else:
+            k = self.get_num_objectives()
+            while f"f{k}" in self._objectives_index:
+                k += 1
+            name = f"f{k}"
+        objective = OptimizationObjective(
+            self,
+            constant,
+            {} if linear is None else linear,
+            {} if quadratic is None else quadratic,
+            {} if higher_order is None else higher_order,
+            sense,
+            name,
+        )
+        self._objectives_index[name] = len(self._objectives)
+        self._objectives.append(objective)
+        return objective

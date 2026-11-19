@@ -46,7 +46,11 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
 
 def _validate_problem_for_ising(problem: BaseOptimizationProblem) -> None:
     """Validate that problem has no constraints and contains only binary or spin variables."""
-    if problem.linear_constraints or problem.quadratic_constraints:
+    if (
+        problem.linear_constraints
+        or problem.quadratic_constraints
+        or problem.higher_order_constraints
+    ):
         raise OptimizationError(
             "There must be no constraint in the problem. "
             "You can use `OptimizationProblemToQubo` converter "
@@ -59,8 +63,7 @@ def _validate_problem_for_ising(problem: BaseOptimizationProblem) -> None:
             "The problem must contain either only binary variables or only spin variables. "
             "You can use `OptimizationProblemToHubo` converter "
             "to convert integer variables to binary variables. "
-            "And you can use `OptimizationProblemToQubo` converter "
-            "to convert continuous variables to binary variables."
+            "Continuous variables are not supported."
         )
 
 
@@ -86,7 +89,7 @@ def to_isings(optimization_problem: BaseOptimizationProblem) -> list[tuple[Spars
     _validate_problem_for_ising(optimization_problem)
     return [
         _objective_to_ising(optimization_problem, objective, validate=False)
-        for objective in optimization_problem._iter_objectives()  # pylint: disable=protected-access
+        for objective in optimization_problem.iter_objectives()
     ]
 
 

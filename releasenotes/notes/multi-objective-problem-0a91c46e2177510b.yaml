@@ -15,7 +15,9 @@ features:
     Added :class:`~qiskit_addon_opt_mapper.BaseOptimizationProblem`, the abstract base class of
     both ``OptimizationProblem`` and ``MultiObjectiveProblem``. It holds the variables,
     constraints, feasibility checks, ``substitute_variables()`` and ``prettyprint()``, and
-    it is exported so that code can be typed against either problem class.
+    it is exported so that code can be typed against either problem class. Its
+    ``iter_objectives()`` method yields the objectives of either problem class, one for an
+    ``OptimizationProblem`` and all of them for a ``MultiObjectiveProblem``.
   - |
     Added :func:`~qiskit_addon_opt_mapper.translators.to_isings`, which translates every objective
     of a problem into an Ising Hamiltonian and returns a list of ``(SparsePauliOp, offset)``

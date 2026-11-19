@@ -275,7 +275,7 @@ class _SubstituteVariables:
     def _objectives(self) -> bool:
         """Substitutes every objective. An objective is never dropped, so this never fails."""
         assert self._src is not None and self._dst is not None
-        for obj in self._src._iter_objectives():
+        for obj in self._src.iter_objectives():
             const, lin, quad, higher = self._poly_apply_substitution(
                 obj.linear, obj.quadratic, getattr(obj, "higher_order", {})
             )

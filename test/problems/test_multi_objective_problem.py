@@ -185,6 +185,17 @@ def test_non_printable_name_warns(problem):
         problem.add_objective(name="a\nb")
 
 
+def test_substitute_variables_does_not_rewarn_for_non_printable_name(problem):
+    """The name is checked when the user adds the objective, not again when it is copied."""
+    with pytest.warns(UserWarning, match="Objective name is not printable"):
+        problem.add_objective(linear={"x": 1}, name="a\nb")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = problem.substitute_variables(constants={"y": 1})
+    assert not [w for w in caught if "not printable" in str(w.message)]
+    assert result.get_objective(0).name == "a\nb"
+
+
 def test_none_coefficients_become_empty(problem):
     """None coefficients are replaced by empty ones."""
     objective = problem.add_objective()
