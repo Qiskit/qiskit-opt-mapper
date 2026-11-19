@@ -1,0 +1,27 @@
+---
+features:
+  - |
+    Added :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem`, an optimization problem that
+    holds an ordered collection of objectives. Objectives are added with
+    :meth:`~qiskit_addon_opt_mapper.MultiObjectiveProblem.add_objective`, which accepts the same
+    constant, linear, quadratic and higher-order terms as ``OptimizationProblem.minimize()``, plus
+    a ``sense`` and an optional ``name``. Unnamed objectives are called ``f0``, ``f1``, and so on.
+    The class supports the same variables, constraints, ``substitute_variables()`` and
+    ``prettyprint()`` as ``OptimizationProblem``. ``to_ising()`` returns a list with one
+    ``(SparsePauliOp, offset)`` pair per objective, whereas ``OptimizationProblem.to_ising()``
+    returns a single pair. Use :func:`~qiskit_addon_opt_mapper.translators.to_isings` to translate
+    either problem class through the same call.
+  - |
+    Added :class:`~qiskit_addon_opt_mapper.BaseOptimizationProblem`, the abstract base class of
+    both ``OptimizationProblem`` and ``MultiObjectiveProblem``. It holds the variables,
+    constraints, feasibility checks, ``substitute_variables()`` and ``prettyprint()``, and
+    it is exported so that code can be typed against either problem class.
+  - |
+    Added :func:`~qiskit_addon_opt_mapper.translators.to_isings`, which translates every objective
+    of a problem into an Ising Hamiltonian and returns a list of ``(SparsePauliOp, offset)``
+    pairs. For an ``OptimizationProblem`` the list has one element, equal to ``to_ising()``.
+other:
+  - |
+    ``OptimizationProblem`` is unchanged. Its public methods, including ``substitute_variables()``
+    and ``prettyprint()``, are now inherited from ``BaseOptimizationProblem``, and their output for
+    a single-objective problem is identical to before.

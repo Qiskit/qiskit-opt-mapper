@@ -15,7 +15,7 @@
 import logging
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from enum import Enum
 from math import isclose
 from typing import TypeAlias, TypeVar, cast
@@ -30,7 +30,7 @@ from ..infinity import INFINITY
 from .constraint import Constraint, ConstraintSense
 from .higher_order_constraint import HigherOrderConstraint
 from .linear_constraint import LinearConstraint
-from .optimization_objective import ObjSense
+from .optimization_objective import ObjSense, OptimizationObjective
 from .optimization_problem_element import OptimizationProblemElement
 from .quadratic_constraint import QuadraticConstraint
 from .variable import Variable, VarType
@@ -65,12 +65,11 @@ class BaseOptimizationProblem(ABC):
     This representation supports inequality and equality constraints,
     as well as continuous, binary, integer, and spin variables.
 
-    Subclasses must implement four hooks: ``_reset_objectives`` (called by ``__init__`` and
-    ``clear``, before any subclass ``__init__`` code runs), ``_objectives_repr``,
-    ``_objectives_str`` and ``_append_or_set_objective_from_parts``. Objective state must be
-    stored in instance attributes, because ``_copy_from`` copies every attribute of the source
-    problem. ``__init__`` of a subclass must accept ``name`` as its only required argument,
-    because ``_new_empty`` calls it.
+    Subclasses must implement six hooks: ``_reset_objectives`` (called by ``__init__`` and
+    ``clear``, before any subclass ``__init__`` code runs), ``is_multi_objective``,
+    ``_iter_objectives``, ``_objectives_repr``, ``_objectives_str`` and
+    ``_append_or_set_objective_from_parts``. Objective state must be stored in instance attributes,
+    because ``_copy_from`` copies every attribute of the source problem.
     """
 
     Status = OptimizationProblemStatus
@@ -160,6 +159,24 @@ class BaseOptimizationProblem(ABC):
         It is called by :meth:`__init__` and by :meth:`clear`.
         """
 
+    @property
+    @abstractmethod
+    def is_multi_objective(self) -> bool:
+        """Whether this problem holds a collection of objectives or a single one.
+
+        Returns:
+            ``True`` if the problem holds a collection of objectives, ``False`` if it holds a
+            single objective.
+        """
+
+    @abstractmethod
+    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+        """Iterates over the objectives of this problem in objective order.
+
+        Returns:
+            An iterator over the objectives of this problem.
+        """
+
     @abstractmethod
     def _objectives_repr(self) -> str:
         """Renders the objective fragment of :meth:`__repr__`.
@@ -190,10 +207,11 @@ class BaseOptimizationProblem(ABC):
         """Adds or sets an objective from its already-assembled parts.
 
         A subclass with a single objective replaces it, while a subclass with several objectives
-        appends to them. This method does not check ``name``: callers that receive the name from
-        a user, such as ``minimize``, check it first. Callers that copy an objective that was
-        already checked, such as the converters, call this method directly so that the warning
-        for a non-printable name is not repeated.
+        appends to them. ``OptimizationProblem`` does not check ``name``: callers that receive the
+        name from a user, such as ``minimize``, check it first. Callers that copy an objective that
+        was already checked, such as the converters, call this method directly so that the warning
+        for a non-printable name is not repeated. ``MultiObjectiveProblem`` does check ``name``,
+        so a copy warns again for a non-printable name.
 
         Args:
             sense: The sense of the objective.
@@ -1163,6 +1181,62 @@ class BaseOptimizationProblem(ABC):
         self._higher_order_constraints_index = {
             cst.name: j for j, cst in enumerate(self._higher_order_constraints)
         }
+
+    def substitute_variables(
+        self: _T,
+        constants: dict[str | int, float] | None = None,
+        variables: dict[str | int, tuple[str | int, float]] | None = None,
+    ) -> _T:
+        """Substitutes variables with constants or other variables.
+
+        Args:
+            constants: replace variable by constant
+                e.g., ``{'x': 2}`` means ``x`` is substituted with 2
+
+            variables: replace variables by weighted other variable
+                need to copy everything using name reference to make sure that indices are matched
+                correctly. The lower and upper bounds are updated accordingly.
+                e.g., ``{'x': ('y', 2)}`` means ``x`` is substituted with ``y * 2``
+
+
+        Returns:
+            An optimization problem of the same class by substituting variables with constants or
+            other variables. If the substitution is valid, ``status`` is still
+            ``Status.VALID``. Otherwise, it gets ``Status.INFEASIBLE``.
+
+            Objectives are never dropped: an objective whose coefficients all vanish is kept as a
+            pure constant.
+
+        Raises:
+            OptimizationError: if the substitution is invalid as follows.
+
+                - Same variable is substituted multiple times.
+                - Coefficient of variable substitution is zero.
+        """
+        # pylint: disable=cyclic-import
+        from .substitute_variables import substitute_variables
+
+        return substitute_variables(self, constants, variables)
+
+    def prettyprint(self, wrap: int = 80) -> str:
+        """Returns a pretty printed string of this problem.
+
+        Args:
+            wrap: The text width to wrap the output strings. It is disabled by setting 0.
+                Note that some strings might exceed this value, for example, a long variable
+                name won't be wrapped. The default value is 80.
+
+
+        Returns:
+            A pretty printed string representing the problem.
+
+        Raises:
+            OptimizationError: if there is a non-printable name.
+        """
+        # pylint: disable=cyclic-import
+        from qiskit_addon_opt_mapper.translators.prettyprint import prettyprint
+
+        return prettyprint(self, wrap)
 
     def _copy_from(self, other: "BaseOptimizationProblem", include_name: bool) -> None:
         """Copy another OptimizationProblem to this updating OptimizationProblemElement.

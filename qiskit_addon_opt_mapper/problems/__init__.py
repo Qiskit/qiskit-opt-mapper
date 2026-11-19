@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -32,6 +32,7 @@ Note:
    :nosignatures:
 
    BaseOptimizationProblem
+   MultiObjectiveProblem
    Constraint
    LinearExpression
    LinearConstraint
@@ -51,6 +52,7 @@ from .higher_order_constraint import HigherOrderConstraint
 from .higher_order_expression import HigherOrderExpression
 from .linear_constraint import LinearConstraint
 from .linear_expression import LinearExpression
+from .multi_objective_problem import MultiObjectiveProblem
 from .optimization_objective import ObjSense, OptimizationObjective
 from .optimization_problem import OptimizationProblem
 from .optimization_problem_element import OptimizationProblemElement
@@ -65,6 +67,7 @@ __all__ = [
     "HigherOrderExpression",
     "LinearConstraint",
     "LinearExpression",
+    "MultiObjectiveProblem",
     "ObjSense",
     "OptimizationObjective",
     "OptimizationProblem",

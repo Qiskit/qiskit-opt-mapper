@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -12,8 +12,9 @@
 
 """Test prettyprint"""
 
+import pytest
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
-from qiskit_addon_opt_mapper.problems import OptimizationProblem
+from qiskit_addon_opt_mapper.problems import MultiObjectiveProblem, OptimizationProblem
 from qiskit_addon_opt_mapper.translators.prettyprint import expr2str, prettyprint
 
 from ..optimization_test_case import OptimizationTestCase
@@ -731,3 +732,147 @@ class TestExpr2Str(OptimizationTestCase):
             expr2str(quadratic=q_p.get_quadratic_constraint(0).quadratic, wrap=10, indent=2),
             "  x0^2\n  - 3*x0*x2\n  + 2*x1*x2",
         )
+
+
+def _two_var_problem(sense: str, name: str = "") -> OptimizationProblem:
+    problem = OptimizationProblem("p")
+    problem.binary_var("x")
+    problem.binary_var("y")
+    getattr(problem, sense)(linear={"x": 1, "y": 2}, name=name)
+    return problem
+
+
+@pytest.mark.parametrize("sense", ["minimize", "maximize"])
+def test_prettyprint_named_objective(sense):
+    """A named objective is rendered with a ``  '<name>'`` suffix and keeps the blank line."""
+    expected = "\n".join(
+        [
+            "Problem name: p",
+            "",
+            sense.capitalize(),
+            "  x + 2*y 'f0'",
+            "",
+            "Subject to",
+            "  No constraints",
+            "",
+            "  Binary variables (2)",
+            "    x y",
+            "",
+        ]
+    )
+    assert _two_var_problem(sense, "f0").prettyprint() == expected
+
+
+@pytest.mark.parametrize("sense", ["minimize", "maximize"])
+def test_prettyprint_unnamed_objective_is_unchanged(sense):
+    """An unnamed objective is rendered exactly as before names existed."""
+    expected = "\n".join(
+        [
+            "Problem name: p",
+            "",
+            sense.capitalize(),
+            "  x + 2*y",
+            "",
+            "Subject to",
+            "  No constraints",
+            "",
+            "  Binary variables (2)",
+            "    x y",
+            "",
+        ]
+    )
+    assert _two_var_problem(sense).prettyprint() == expected
+
+
+def test_prettyprint_named_objective_with_constraint():
+    """The name suffix does not disturb the constraint section."""
+    problem = _two_var_problem("minimize", "f0")
+    problem.linear_constraint({"x": 1}, "<=", 1, "c")
+    expected = "\n".join(
+        [
+            "Problem name: p",
+            "",
+            "Minimize",
+            "  x + 2*y 'f0'",
+            "",
+            "Subject to",
+            "  Linear constraints (1)",
+            "    x <= 1  'c'",
+            "",
+            "  Binary variables (2)",
+            "    x y",
+            "",
+        ]
+    )
+    assert problem.prettyprint() == expected
+
+
+def test_str_and_repr_of_named_objective():
+    """``str`` and ``repr`` of the problem show the objective name."""
+    problem = _two_var_problem("maximize", "f0")
+    assert str(problem) == "maximize x + 2*y 'f0' (2 variables, 0 constraints, 'p')"
+    assert repr(problem) == (
+        "<OptimizationProblem: maximize x + 2*y 'f0', 2 variables, 0 constraints, 'p'>"
+    )
+
+
+def _multi_objective_problem() -> MultiObjectiveProblem:
+    problem = MultiObjectiveProblem("m")
+    problem.binary_var("x")
+    problem.binary_var("y")
+    problem.add_objective(linear={"x": 1, "y": 2}, name="cost")
+    problem.add_objective(constant=1, quadratic={("x", "y"): 3}, sense="max", name="gain")
+    return problem
+
+
+def test_prettyprint_multi_objective_exact():
+    """Two objectives: one header per objective, one blank line before ``Subject to``."""
+    expected = "\n".join(
+        [
+            "Problem name: m",
+            "",
+            "Minimize",
+            "  x + 2*y 'cost'",
+            "Maximize",
+            "  3*x*y + 1 'gain'",
+            "",
+            "Subject to",
+            "  No constraints",
+            "",
+            "  Binary variables (2)",
+            "    x y",
+            "",
+        ]
+    )
+    assert _multi_objective_problem().prettyprint() == expected
+
+
+def test_prettyprint_multi_objective_zero_objectives_exact():
+    """Zero objectives: ``No objectives`` and a well-formed rest of the output."""
+    expected = "\n".join(
+        [
+            "Problem name: e",
+            "",
+            "  No objectives",
+            "",
+            "Subject to",
+            "  No constraints",
+            "",
+            "  No variables",
+            "",
+        ]
+    )
+    assert MultiObjectiveProblem("e").prettyprint() == expected
+
+
+def test_prettyprint_function_accepts_multi_objective_problem():
+    """The module-level ``prettyprint`` accepts a ``MultiObjectiveProblem``."""
+    problem = _multi_objective_problem()
+    assert prettyprint(problem) == problem.prettyprint()
+
+
+def test_prettyprint_multi_objective_has_no_triple_newline():
+    """No empty line is doubled anywhere in the multi-objective output."""
+    problem = _multi_objective_problem()
+    problem.linear_constraint({"x": 1}, "<=", 1, "c")
+    assert "\n\n\n" not in problem.prettyprint()
