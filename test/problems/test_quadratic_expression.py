@@ -204,6 +204,8 @@ def test_accepts_dict_with_name_keys():
 # ---------------- getitem / setitem ----------------
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
 @pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
 def test_getitem_setitem_with_indices(representation):
     expr = MAKE_INSTANCE({}, nvars=3, representation=representation)
