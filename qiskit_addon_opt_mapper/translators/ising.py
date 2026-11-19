@@ -80,8 +80,13 @@ def _objective_to_ising(
     # convert a constant part of the objective function into Hamiltonian.
     offset = objective.constant * sense
 
-    linear = objective.linear.coefficients.tocoo()
-    lin_idx, lin_coef = linear.col, linear.data * sense
+    if isinstance(objective.linear.coefficients, np.ndarray):
+        lin_idx = np.nonzero(objective.linear.coefficients)[0]
+        lin_coef = objective.linear.coefficients[lin_idx] * sense
+    else:
+        linear = objective.linear.coefficients.tocoo()
+        lin_idx = linear.coords[0]
+        lin_coef = linear.data * sense
     quadratic = objective.quadratic.coefficients.tocoo()
     diag = quadratic.row == quadratic.col
     quad_idx = np.column_stack((quadratic.row, quadratic.col))[~diag]

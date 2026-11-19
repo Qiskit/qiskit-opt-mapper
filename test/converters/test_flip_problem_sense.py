@@ -14,6 +14,7 @@
 
 import unittest
 
+import numpy as np
 from qiskit_addon_opt_mapper import OptimizationProblem
 from qiskit_addon_opt_mapper.converters import MaximizeToMinimize, MinimizeToMaximize
 from scipy.sparse import dok_array
@@ -133,7 +134,7 @@ class TestFlipProblemSense(OptimizationTestCase):
         conv = MaximizeToMinimize()
         op_conv = conv.convert(op)
 
-        self.assertIsInstance(op_conv.objective.linear.coefficients, dok_array)
+        self.assertIsInstance(op_conv.objective.linear.coefficients, np.ndarray)
         self.assertIsInstance(op_conv.objective.quadratic.coefficients, dok_array)
         self.assertEqual(op_conv.objective.linear.to_dict(), {0: -1.0, 1: -2.0})
         self.assertEqual(op_conv.objective.quadratic.to_dict(), {(0, 1): -3.0})
