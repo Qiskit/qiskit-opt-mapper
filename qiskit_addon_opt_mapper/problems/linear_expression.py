@@ -37,7 +37,15 @@ class ExpressionBounds:
 
 
 class Representation(Enum):
-    """The internal storage representation of an expression's coefficients."""
+    """The internal storage representation of an expression's coefficients.
+
+    .. warning::
+        ``COO`` does not support scalar element access: ``expr[i]`` and ``expr[i] = v`` are
+        unsafe on ``Representation.COO`` and may raise ``TypeError`` depending on the installed
+        scipy version. Use :meth:`~LinearExpression.to_dict` or
+        :meth:`~LinearExpression.to_array` to read coefficients, or pick a different
+        representation if per-element access is needed.
+    """
 
     DENSE = "dense"
     COO = "coo"
@@ -100,13 +108,22 @@ class LinearExpression(OptimizationProblemElement):
 
         Returns:
             The coefficient corresponding to the addressed variable.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
         """
         if isinstance(i, str):
             i = self.optimization_problem.variables_index[i]
         return float(self.coefficients[i])
 
     def __setitem__(self, i: int | str, value: float) -> None:
-        """Set item for LinearExpression."""
+        """Set item for LinearExpression.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
+        """
         if isinstance(i, str):
             i = self.optimization_problem.variables_index[i]
         self._coefficients[i] = value
