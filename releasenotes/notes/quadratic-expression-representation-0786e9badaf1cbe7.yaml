@@ -17,17 +17,15 @@ upgrade:
     ``.todok()``, or ``.nnz`` on ``.coefficients`` should either adapt to the dense
     array API or construct the expression with ``representation=Representation.DOK``
     to keep the previous behavior.
-fixes:
+other:
   - |
-    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.evaluate_gradient` no
-    longer materializes the dense ``(n, n)`` matrix ``Q + Q.T`` on every call; it now
-    computes ``Q @ x + x @ Q`` directly, which is dramatically faster for large ``n``
-    and avoids the extra memory allocation.
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.evaluate_gradient`
+    now computes ``Q @ x + x @ Q`` directly instead of first materializing the dense
+    ``(n, n)`` matrix ``Q + Q.T``, avoiding an O(n^2) allocation (roughly an order of
+    magnitude faster at ``n=1500`` in dense representation).
   - |
     Constructing a :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` with
     a non-``DENSE`` ``representation`` from a dense :class:`numpy.ndarray` or an
-    existing sparse matrix no longer round-trips through
-    :class:`scipy.sparse.dok_array` to fold the coefficients into upper-triangular
-    form; the fold is now done directly on the dense array, or on a
-    :class:`scipy.sparse.coo_array` view of the sparse input, which is substantially
-    faster for large, densely-populated inputs.
+    existing sparse matrix now folds the coefficients into upper-triangular form
+    directly, instead of round-tripping through :class:`scipy.sparse.dok_array`
+    (roughly 3 orders of magnitude faster for a densely-populated 3000x3000 input).

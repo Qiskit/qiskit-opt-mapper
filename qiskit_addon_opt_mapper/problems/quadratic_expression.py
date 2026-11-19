@@ -155,57 +155,72 @@ class QuadraticExpression(OptimizationProblemElement):
         """
         n = self.optimization_problem.get_num_vars()
 
-        def _dict_to_dok(coeffs: dict[tuple[int, int], float]) -> dok_array:
-            if coeffs:
-                rows, cols, values = zip(*((i, j, v) for (i, j), v in coeffs.items()), strict=True)
-                ret = dok_array(coo_array((values, (rows, cols)), shape=(n, n)).todok())
-            else:
-                ret = dok_array((n, n))
-            return ret
-
         if isinstance(coefficients, list):
-            coeffs = defaultdict(float)
-            if len(coefficients) != n:
-                raise OptimizationError(
-                    f"The coefficient list for the quadratic expression must be a list of {n} "
-                    f"lists, each of length {n}, matching the number of variables."
-                )
-            for i, row in enumerate(coefficients):
-                if len(row) != n:
-                    raise OptimizationError(
-                        f"Each inner list for the quadratic expression must be of length {n}"
-                        f"matching the number of variables."
-                    )
-                for j, value in enumerate(row):
-                    coeffs[i, j] = value
-            folded = self._fold_sparse(_dict_to_dok(coeffs))
+            folded = self._fold_sparse(self._list_to_coo(coefficients, n))
         elif isinstance(coefficients, ndarray):
-            if coefficients.ndim != 2 or coefficients.shape != (n, n):
-                raise OptimizationError(
-                    f"The coefficient numpy array for the quadratic expression must be a (n, n) "
-                    f"matrix with shape ({n}, {n}) matching the number of variables."
-                )
+            self._check_shape(coefficients, n, "numpy array")
             folded = self._fold_dense(coefficients)
         elif isinstance(coefficients, sparray | spmatrix):
-            if coefficients.ndim != 2 or coefficients.shape != (n, n):
-                raise OptimizationError(
-                    f"The coefficient sparse matrix for the quadratic expression must be a (n, n) "
-                    f"matrix with shape ({n}, {n}) matching the number of variables."
-                )
+            self._check_shape(coefficients, n, "sparse matrix")
             folded = self._fold_sparse(coefficients)
         elif isinstance(coefficients, dict):
-            coeffs = defaultdict(float)
-            for (i, j), value in coefficients.items():  # type: ignore
-                i_idx = self.optimization_problem.variables_index[i] if isinstance(i, str) else i
-                j_idx = self.optimization_problem.variables_index[j] if isinstance(j, str) else j
-                if i_idx > j_idx:
-                    i_idx, j_idx = j_idx, i_idx
-                coeffs[i_idx, j_idx] += value
-            folded = self._fold_sparse(_dict_to_dok(coeffs))
+            folded = self._fold_sparse(self._dict_to_coo(coefficients, n))
         else:
             raise OptimizationError(f"Unsupported format for coefficients: {coefficients}")
 
         return self._to_representation(folded)
+
+    @staticmethod
+    def _check_shape(coefficients: ndarray | sparray | spmatrix, n: int, kind: str) -> None:
+        """Raises ``OptimizationError`` unless ``coefficients`` is a 2-D (n, n) matrix."""
+        if coefficients.ndim != 2 or coefficients.shape != (n, n):
+            raise OptimizationError(
+                f"The coefficient {kind} for the quadratic expression must be a (n, n) "
+                f"matrix with shape ({n}, {n}) matching the number of variables."
+            )
+
+    @staticmethod
+    def _list_to_coo(coefficients: list[list[float]], n: int) -> coo_array:
+        """Validates and converts a list of lists into a ``coo_array``."""
+        if len(coefficients) != n:
+            raise OptimizationError(
+                f"The coefficient list for the quadratic expression must be a list of {n} "
+                f"lists, each of length {n}, matching the number of variables."
+            )
+        coeffs: dict[tuple[int, int], float] = {}
+        for i, row in enumerate(coefficients):
+            if len(row) != n:
+                raise OptimizationError(
+                    f"Each inner list for the quadratic expression must be of length {n}"
+                    f"matching the number of variables."
+                )
+            for j, value in enumerate(row):
+                coeffs[i, j] = value
+        return QuadraticExpression._coeffs_dict_to_coo(coeffs, n)
+
+    def _dict_to_coo(
+        self, coefficients: dict[tuple[str | int, str | int], float], n: int
+    ) -> coo_array:
+        """Resolves variable names/indices and converts a coefficient dict into a ``coo_array``.
+
+        Entries at symmetric (i, j)/(j, i) positions are summed into the upper triangle.
+        """
+        coeffs: dict[tuple[int, int], float] = defaultdict(float)
+        for (i, j), value in coefficients.items():
+            i_idx = self.optimization_problem.variables_index[i] if isinstance(i, str) else i
+            j_idx = self.optimization_problem.variables_index[j] if isinstance(j, str) else j
+            if i_idx > j_idx:
+                i_idx, j_idx = j_idx, i_idx
+            coeffs[i_idx, j_idx] += value
+        return self._coeffs_dict_to_coo(coeffs, n)
+
+    @staticmethod
+    def _coeffs_dict_to_coo(coeffs: dict[tuple[int, int], float], n: int) -> coo_array:
+        """Converts an int-indexed coefficient dict into a ``coo_array``."""
+        if not coeffs:
+            return coo_array((n, n))
+        rows, cols, values = zip(*((i, j, v) for (i, j), v in coeffs.items()), strict=True)
+        return coo_array((values, (rows, cols)), shape=(n, n))
 
     @staticmethod
     def _fold_dense(mat: ndarray) -> ndarray:
@@ -220,7 +235,7 @@ class QuadraticExpression(OptimizationProblemElement):
         Works directly on COO, avoiding a DOK round-trip for formats (e.g. CSR/CSC, or a
         dense array converted upstream) where that round-trip would dominate the cost.
         """
-        coo = coo_array(mat)
+        coo = coo_array(mat, dtype=np.float64)
         lower = tril(coo, -1, format="coo")
         return cast(sparray, triu(coo, format="coo") + lower.transpose())
 
