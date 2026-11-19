@@ -99,6 +99,11 @@ class QuadraticExpression(OptimizationProblemElement):
     def __setitem__(self, key: tuple[str | int, str | int], value: float) -> None:
         """Sets the coefficient where i, j can be a variable names or indices.
 
+        On a ``Representation.COO`` expression, every call converts the whole matrix to DOK
+        and back. On ``Representation.CSR``/``Representation.CSC``, inserting a coefficient at
+        a previously-unset position raises scipy's ``SparseEfficiencyWarning``. Prefer ``DOK``
+        for workloads that do many scalar writes.
+
         Args:
             key: The tuple of indices or names of the variables corresponding to the coefficient.
             value: The coefficient corresponding to the addressed variables.
@@ -112,8 +117,8 @@ class QuadraticExpression(OptimizationProblemElement):
             warnings.warn(
                 "Setting a single coefficient on a COO-represented QuadraticExpression "
                 "converts the whole matrix to DOK and back, which is inefficient for "
-                "repeated assignment; use Representation.DOK instead if you need to set "
-                "many individual coefficients.",
+                "repeated assignment; construct the expression with Representation.DOK "
+                "instead if you need to set many individual coefficients.",
                 stacklevel=2,
             )
             dok = self._coefficients.todok()
@@ -173,24 +178,21 @@ class QuadraticExpression(OptimizationProblemElement):
                     )
                 for j, value in enumerate(row):
                     coeffs[i, j] = value
-            dok = _dict_to_dok(coeffs)
+            folded = self._fold_sparse(_dict_to_dok(coeffs))
         elif isinstance(coefficients, ndarray):
             if coefficients.ndim != 2 or coefficients.shape != (n, n):
                 raise OptimizationError(
                     f"The coefficient numpy array for the quadratic expression must be a (n, n) "
                     f"matrix with shape ({n}, {n}) matching the number of variables."
                 )
-            if self._representation == Representation.DENSE:
-                folded = np.triu(coefficients) + np.tril(coefficients, -1).T
-                return np.ascontiguousarray(folded, dtype=np.float64)
-            dok = dok_array(coefficients)
+            folded = self._fold_dense(coefficients)
         elif isinstance(coefficients, sparray | spmatrix):
             if coefficients.ndim != 2 or coefficients.shape != (n, n):
                 raise OptimizationError(
                     f"The coefficient sparse matrix for the quadratic expression must be a (n, n) "
                     f"matrix with shape ({n}, {n}) matching the number of variables."
                 )
-            dok = dok_array(coefficients)
+            folded = self._fold_sparse(coefficients)
         elif isinstance(coefficients, dict):
             coeffs = defaultdict(float)
             for (i, j), value in coefficients.items():  # type: ignore
@@ -199,20 +201,36 @@ class QuadraticExpression(OptimizationProblemElement):
                 if i_idx > j_idx:
                     i_idx, j_idx = j_idx, i_idx
                 coeffs[i_idx, j_idx] += value
-            dok = _dict_to_dok(coeffs)
+            folded = self._fold_sparse(_dict_to_dok(coeffs))
         else:
             raise OptimizationError(f"Unsupported format for coefficients: {coefficients}")
 
-        folded = self._triangle_matrix(dok)
-        if self._representation == Representation.DENSE:
-            return np.ascontiguousarray(folded.toarray(), dtype=np.float64)
-        return _SPARSE_2D_CONSTRUCTORS[self._representation](folded)
+        return self._to_representation(folded)
 
     @staticmethod
-    def _triangle_matrix(mat: dok_array) -> dok_array:
-        lower = tril(mat, -1, format="dok")
-        # `todok` is necessary because subtraction results in other format
-        return (mat + lower.transpose() - lower).todok()
+    def _fold_dense(mat: ndarray) -> ndarray:
+        """Folds a dense (n, n) array into upper-triangle-compressed form."""
+        folded = np.triu(mat) + np.tril(mat, -1).T
+        return np.ascontiguousarray(folded, dtype=np.float64)
+
+    @staticmethod
+    def _fold_sparse(mat: sparray | spmatrix) -> sparray:
+        """Folds a sparse (n, n) matrix into upper-triangle-compressed form.
+
+        Works directly on COO, avoiding a DOK round-trip for formats (e.g. CSR/CSC, or a
+        dense array converted upstream) where that round-trip would dominate the cost.
+        """
+        coo = coo_array(mat)
+        lower = tril(coo, -1, format="coo")
+        return cast(sparray, triu(coo, format="coo") + lower.transpose())
+
+    def _to_representation(self, folded: ndarray | sparray) -> ndarray | sparray:
+        """Casts an already upper-triangle-folded matrix to this expression's representation."""
+        if self._representation == Representation.DENSE:
+            if isinstance(folded, ndarray):
+                return folded
+            return np.ascontiguousarray(folded.toarray(), dtype=np.float64)
+        return _SPARSE_2D_CONSTRUCTORS[self._representation](folded)
 
     @staticmethod
     def _symmetric_matrix(mat: ndarray | sparray) -> ndarray | sparray:
@@ -223,13 +241,6 @@ class QuadraticExpression(OptimizationProblemElement):
         upper = triu(mat, 1, format="dok") / 2
         # `asformat` is necessary because subtraction results in other format
         return (mat + upper.transpose() - upper).asformat(mat.format)
-
-    def _gradient_matrix(self) -> ndarray | sparray:
-        """Returns ``Q + Q.T`` for the gradient."""
-        mat = self._coefficients
-        if isinstance(mat, ndarray):
-            return mat + mat.T
-        return (mat.transpose() + mat).asformat(mat.format)
 
     @property
     def coefficients(self) -> ndarray | sparray:
@@ -334,8 +345,9 @@ class QuadraticExpression(OptimizationProblemElement):
         """
         x = self._cast_as_array(x)
 
-        # compute (Q' + Q) * x for the quadratic expression, reusing the cached gradient matrix
-        val = self._gradient_matrix() @ x
+        # compute (Q' + Q) * x as Q @ x + x @ Q, which never forms the (n, n) matrix Q + Q'
+        mat = self._coefficients
+        val = mat @ x + x @ mat
 
         # return the result
         return cast(ndarray, val)
