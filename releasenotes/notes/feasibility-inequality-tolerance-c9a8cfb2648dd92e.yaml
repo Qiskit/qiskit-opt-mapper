@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    Fixed :meth:`~qiskit_addon_opt_mapper.problems.OptimizationProblem.get_feasibility_info`
+    and :meth:`~qiskit_addon_opt_mapper.problems.OptimizationProblem.is_feasible` to apply
+    the same numerical tolerance to inequality constraints (``<=``, ``>=``) that was
+    already applied to equality constraints via ``math.isclose``. Previously, a
+    solution that violated an inequality constraint by a tiny floating-point amount
+    could be incorrectly reported as infeasible.
