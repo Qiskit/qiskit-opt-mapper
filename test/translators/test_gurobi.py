@@ -138,8 +138,11 @@ class TestGurobiTranslator(OptimizationTestCase):
 
     @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
     def test_to_gurobipy_dense_default_round_trip_empty_terms(self):
-        """to_gurobipy() round-trips a problem whose linear/quadratic terms are all-zero and
-        stored with the DENSE-by-default representation (no AttributeError on .nnz)."""
+        """to_gurobipy() handles a problem whose linear/quadratic terms are all-zero and
+        stored with the DENSE-by-default representation (no AttributeError on .nnz). The
+        all-zero, rhs == 0 constraints are intentionally dropped by to_gurobipy (see
+        test_all_zero_constraints_with_rhs_zero_are_skipped), so they do not survive the
+        round trip."""
         q_p = OptimizationProblem("test")
         q_p.binary_var(name="x")
         q_p.binary_var(name="y")
@@ -148,7 +151,10 @@ class TestGurobiTranslator(OptimizationTestCase):
         q_p.quadratic_constraint(linear={}, quadratic={}, sense="<=", rhs=0.0)
 
         q_p2 = from_gurobipy(to_gurobipy(q_p))
-        self.assertEqual(q_p.prettyprint(), q_p2.prettyprint())
+        self.assertEqual([v.name for v in q_p2.variables], [v.name for v in q_p.variables])
+        self.assertEqual(q_p2.objective.constant, q_p.objective.constant)
+        self.assertEqual(len(q_p2.linear_constraints), 0)
+        self.assertEqual(len(q_p2.quadratic_constraints), 0)
 
     @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
     def test_to_gurobipy_dense_default_round_trip_nonempty_terms(self):

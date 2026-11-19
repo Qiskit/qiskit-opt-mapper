@@ -804,8 +804,10 @@ class TestDocplexMpTranslator(OptimizationTestCase):
             self.assertEqual(mod.number_of_constraints, 0)
 
     def test_to_docplex_mp_dense_default_round_trip_empty_terms(self):
-        """to_docplex_mp() round-trips a problem whose linear/quadratic terms are all-zero and
-        stored with the DENSE-by-default representation (no AttributeError on .nnz)."""
+        """to_docplex_mp() handles a problem whose linear/quadratic terms are all-zero and
+        stored with the DENSE-by-default representation (no AttributeError on .nnz). The
+        all-zero, rhs == 0 constraints are intentionally dropped by to_docplex_mp (see
+        test_trivial_constraints_to_docplex_mp), so they do not survive the round trip."""
         q_p = OptimizationProblem("test")
         q_p.binary_var(name="x")
         q_p.binary_var(name="y")
@@ -814,10 +816,10 @@ class TestDocplexMpTranslator(OptimizationTestCase):
         q_p.quadratic_constraint(linear={}, quadratic={}, sense="<=", rhs=0.0)
 
         q_p2 = from_docplex_mp(to_docplex_mp(q_p))
-        self.assertEqual(
-            to_docplex_mp(q_p).export_as_lp_string(),
-            to_docplex_mp(q_p2).export_as_lp_string(),
-        )
+        self.assertEqual([v.name for v in q_p2.variables], [v.name for v in q_p.variables])
+        self.assertEqual(q_p2.objective.constant, q_p.objective.constant)
+        self.assertEqual(len(q_p2.linear_constraints), 0)
+        self.assertEqual(len(q_p2.quadratic_constraints), 0)
 
     def test_to_docplex_mp_dense_default_round_trip_nonempty_terms(self):
         """to_docplex_mp() round-trips a problem with non-zero linear/quadratic terms stored with
