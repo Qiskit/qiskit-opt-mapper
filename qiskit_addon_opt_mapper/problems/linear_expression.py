@@ -145,7 +145,7 @@ class LinearExpression(OptimizationProblemElement):
         """
         n = self.optimization_problem.get_num_vars()
         if isinstance(coefficients, list | ndarray):
-            dense = np.ascontiguousarray(coefficients, dtype=np.float64)
+            dense = np.array(coefficients, dtype=np.float64)
             if dense.ndim != 1 or dense.shape[0] != n:
                 raise OptimizationError(
                     "The coefficient array or list for the linear expression must be "
