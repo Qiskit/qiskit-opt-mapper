@@ -148,6 +148,26 @@ def test_rejects_wrong_length_sparse():
     assert "one-dimensional" in str(e.value).lower()
 
 
+@pytest.mark.parametrize("shape", [(1, 4), (4, 1)])
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_accepts_sparse_row_and_column_vectors(shape, representation):
+    n = 4
+    m = dok_array(shape)
+    m[0, 0] = 1.0
+    m[(0, 2) if shape == (1, 4) else (2, 0)] = -2.5
+    expr = MAKE_INSTANCE(m, nvars=n, representation=representation)
+    assert expr.coefficients.shape == (n,)
+    assert expr.to_array().tolist() == [1.0, 0.0, -2.5, 0.0]
+
+
+def test_rejects_sparse_wrong_shape_2d():
+    n = 4
+    bad = dok_array((2, n))
+    with pytest.raises(OptimizationError) as e:
+        MAKE_INSTANCE(bad, nvars=n)
+    assert "one-dimensional" in str(e.value).lower()
+
+
 def test_rejects_unsupported_type():
     n = 4
     with pytest.raises(OptimizationError) as e:

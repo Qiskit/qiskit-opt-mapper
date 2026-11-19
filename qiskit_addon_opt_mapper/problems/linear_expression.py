@@ -152,10 +152,15 @@ class LinearExpression(OptimizationProblemElement):
                     "one-dimensional and length must match the number of variables."
                 )
         elif isinstance(coefficients, sparray | spmatrix):
-            if coefficients.ndim != 1 or coefficients.shape[0] != n:
+            shape = coefficients.shape
+            # accept a 1-D vector, or a (1, n) / (n, 1) row/column vector
+            is_vector = coefficients.ndim == 1 and shape[0] == n
+            is_row_or_col = coefficients.ndim == 2 and shape in ((1, n), (n, 1))
+            if not (is_vector or is_row_or_col):
                 raise OptimizationError(
                     "The sparse coefficient array for the linear expression must be "
-                    "one-dimensional with length matching the number of variables."
+                    "one-dimensional (or a (1, n) / (n, 1) vector) with length matching the "
+                    "number of variables."
                 )
             dense = np.ascontiguousarray(coefficients.toarray().reshape(-1), dtype=np.float64)
         elif isinstance(coefficients, dict):
