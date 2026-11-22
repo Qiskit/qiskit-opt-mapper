@@ -13,20 +13,24 @@
 """An abstract class for optimization algorithms in Qiskit optimization module."""
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
-from ..problems.optimization_problem import OptimizationProblem
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class OptimizationProblemConverter(ABC):
     """An abstract class for converters of optimization problem in Qiskit optimization module."""
 
     @abstractmethod
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert method.
 
-        Convert a OptimizationProblem into another form
+        Convert an optimization problem into another form
         and keep the information required to interpret the result.
         """
         raise NotImplementedError

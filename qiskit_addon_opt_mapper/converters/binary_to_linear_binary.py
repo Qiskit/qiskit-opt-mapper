@@ -14,16 +14,19 @@
 
 from collections import defaultdict
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems import HigherOrderExpression, LinearExpression, QuadraticExpression
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
 
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
 
@@ -80,18 +83,19 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
 
     def __init__(self) -> None:
         """Initialize converter."""
-        self._dst: OptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._new_vars: keydefaultdict[tuple[str, ...], Variable]
 
     # ---- public API ----
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert all high-degree terms (namely, degree 2+) to linear terms."""
         msg = self.get_compatibility_msg(problem)
         if len(msg) > 0:
             raise OptimizationError(f"Incompatible problem: {msg}")
 
-        self._dst = OptimizationProblem(name=problem.name)
+        dst = problem._new_empty()
+        self._dst = dst
 
         # 1) Copy variables
         for v in problem.variables:
@@ -102,16 +106,15 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
             lambda x: self._dst.binary_var(self._CONCAT_SEPARATOR.join(x))  # type: ignore
         )
 
-        # 3) Objective function
-        obj_lin_dict = self._convert_expr(
-            problem.objective.linear, problem.objective.quadratic, problem.objective.higher_order
-        )
-        self._dst._append_or_set_objective_from_parts(
-            problem.objective.sense,
-            constant=problem.objective.constant,
-            linear=obj_lin_dict,
-            name=problem.objective.name,
-        )
+        # 3) Objective function(s)
+        for obj in problem.iter_objectives():
+            obj_lin_dict = self._convert_expr(obj.linear, obj.quadratic, obj.higher_order)
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=obj.constant,
+                linear=obj_lin_dict,
+                name=obj.name,
+            )
 
         # 4) Constraints
         for lc in problem.linear_constraints:
@@ -134,7 +137,7 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
             var_dict[new_var.name] = 1
             self._dst.linear_constraint(var_dict, ">=", 1 - len(old_var_names))  # type: ignore
 
-        return self._dst
+        return dst
 
     def interpret(self, x: np.ndarray | list[float]) -> np.ndarray:
         """Convert a solution of the converted problem back to a solution of the original problem."""
@@ -143,7 +146,7 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
         return np.array(x[: self._dst.get_num_vars() - len(self._new_vars)])
 
     @staticmethod
-    def get_compatibility_msg(problem: OptimizationProblem) -> str:
+    def get_compatibility_msg(problem: "BaseOptimizationProblem") -> str:
         """Checks whether the given problem is compatible with the conversion.
 
         A problem is compatible if all variables are binary.
@@ -167,7 +170,7 @@ class BinaryToLinearBinary(OptimizationProblemConverter):
         # if an error occurred, return error message, otherwise, return the empty string
         return msg
 
-    def is_compatible(self, problem: OptimizationProblem) -> bool:
+    def is_compatible(self, problem: "BaseOptimizationProblem") -> bool:
         """Checks whether a given problem can be solved with the optimizer implementing this method.
 
         Args:

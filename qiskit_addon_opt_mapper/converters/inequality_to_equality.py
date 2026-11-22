@@ -14,6 +14,7 @@
 
 import copy
 import math
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
@@ -21,10 +22,14 @@ from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint
 from ..problems.higher_order_constraint import HigherOrderConstraint
 from ..problems.linear_constraint import LinearConstraint
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.quadratic_constraint import QuadraticConstraint
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
+
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class InequalityToEquality(OptimizationProblemConverter):
@@ -51,11 +56,11 @@ class InequalityToEquality(OptimizationProblemConverter):
                 - 'continuous': All slack variables will be continuous variables.
                 - 'auto': Use integer variables if possible, otherwise use continuous variables.
         """
-        self._src: OptimizationProblem | None = None
-        self._dst: OptimizationProblem | None = None
+        self._src: BaseOptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._mode = mode
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert a problem with inequality constraints into one with only equality constraints.
 
         Args:
@@ -71,7 +76,8 @@ class InequalityToEquality(OptimizationProblemConverter):
             OptimizationError: If an unsupported sense is specified.
         """
         self._src = copy.deepcopy(problem)
-        self._dst = OptimizationProblem(name=problem.name)
+        dst = problem._new_empty()
+        self._dst = dst
 
         # set a converting mode
         mode = self._mode
@@ -183,24 +189,25 @@ class InequalityToEquality(OptimizationProblemConverter):
                     f"{ho_const.sense}"
                 )
 
-        # Copy the objective function
-        constant = self._src.objective.constant
-        linear = self._src.objective.linear.to_dict(use_name=True)
-        quadratic = self._src.objective.quadratic.to_dict(use_name=True)
+        # Copy the objective function(s)
+        for obj in self._src.iter_objectives():
+            constant = obj.constant
+            linear = obj.linear.to_dict(use_name=True)
+            quadratic = obj.quadratic.to_dict(use_name=True)
 
-        ho = {
-            degree: dict(expr.to_dict(use_name=True))  # Ensure it's a plain dict
-            for degree, expr in self._src.objective.higher_order.items()
-        }
+            ho = {
+                degree: dict(expr.to_dict(use_name=True))  # Ensure it's a plain dict
+                for degree, expr in obj.higher_order.items()
+            }
 
-        self._dst._append_or_set_objective_from_parts(
-            self._src.objective.sense,
-            constant=constant,
-            linear=linear,
-            quadratic=quadratic,
-            higher_order=ho,  # type: ignore[arg-type]
-            name=self._src.objective.name,
-        )
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=constant,
+                linear=linear,
+                quadratic=quadratic,
+                higher_order=ho,  # type: ignore[arg-type]
+                name=obj.name,
+            )
 
         # Add linear constraints
         for lin_const_args in new_linear_constraints:
@@ -213,7 +220,7 @@ class InequalityToEquality(OptimizationProblemConverter):
         for ho_const_args in new_higher_order_constraints:
             self._dst.higher_order_constraint(*ho_const_args)  # type: ignore
 
-        return self._dst
+        return dst
 
     def _add_slack_var_linear_constraint(self, constraint: LinearConstraint):
         linear = constraint.linear

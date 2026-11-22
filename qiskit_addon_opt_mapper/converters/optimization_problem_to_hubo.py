@@ -12,7 +12,7 @@
 
 """A converter from OptimizationProblem to HUBO form."""
 
-from typing import cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import numpy as np
 
@@ -22,9 +22,13 @@ from ..converters.integer_to_binary import IntegerToBinary
 from ..converters.linear_inequality_to_penalty import LinearInequalityToPenalty
 from ..converters.spin_to_binary import SpinToBinary
 from ..exceptions import OptimizationError
-from ..problems.optimization_problem import OptimizationProblem
 from .equality_to_penalty import EqualityToPenalty
 from .optimization_problem_converter import OptimizationProblemConverter
+
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class OptimizationProblemToHubo(OptimizationProblemConverter):
@@ -67,7 +71,7 @@ class OptimizationProblemToHubo(OptimizationProblemConverter):
             MaximizeToMinimize(),
         ]
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert an optimization problem into a HUBO form.
 
         The new problem has no constraints and the objective function is higher order polynomial.
@@ -109,7 +113,7 @@ class OptimizationProblemToHubo(OptimizationProblemConverter):
         return cast(np.ndarray, x)
 
     @staticmethod
-    def get_compatibility_msg(problem: OptimizationProblem) -> str:
+    def get_compatibility_msg(problem: "BaseOptimizationProblem") -> str:
         """Checks whether the given problem is compatible with HUBO conversion.
 
         A problem is compatible if it can be converted to a HUBO (Higher-order Unconstrained Binary Optimization).
@@ -161,7 +165,7 @@ class OptimizationProblemToHubo(OptimizationProblemConverter):
         # if an error occurred, return error message, otherwise, return the empty string
         return msg
 
-    def is_compatible(self, problem: OptimizationProblem) -> bool:
+    def is_compatible(self, problem: "BaseOptimizationProblem") -> bool:
         """Checks whether a given problem can be solved with the optimizer implementing this method.
 
         Args:

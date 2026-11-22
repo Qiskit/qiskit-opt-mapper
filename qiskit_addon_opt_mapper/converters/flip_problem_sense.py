@@ -13,13 +13,18 @@
 """Converters to flip problem sense, e.g. maximization to minimization and vice versa."""
 
 import copy
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems.optimization_objective import ObjSense
-from ..problems.optimization_problem import OptimizationProblem
 from .optimization_problem_converter import OptimizationProblemConverter
+
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class _FlipProblemSense(OptimizationProblemConverter):
@@ -32,7 +37,7 @@ class _FlipProblemSense(OptimizationProblemConverter):
     def __init__(self) -> None:
         self._src_num_vars: int | None = None
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Flip the sense of a problem.
 
         Args:
@@ -44,37 +49,38 @@ class _FlipProblemSense(OptimizationProblemConverter):
         """
         # copy original number of variables as reference.
         self._src_num_vars = problem.get_num_vars()
-        desired_sense = self._get_desired_sense(problem)
 
-        # flip the problem sense
-        if problem.objective.sense != desired_sense:
-            desired_problem = copy.deepcopy(problem)
-            desired_problem.objective.sense = desired_sense
-            desired_problem.objective.constant = (-1) * problem.objective.constant
-            desired_problem.objective.linear = (-1) * problem.objective.linear.coefficients
-            desired_problem.objective.quadratic = (-1) * problem.objective.quadratic.coefficients
-            desired_problem.objective.higher_order = {
-                degree: (-1) * ho.to_array()
-                for degree, ho in problem.objective.higher_order.items()
-            }
+        needs_flip = any(
+            obj.sense != self._get_desired_sense(obj.sense) for obj in problem.iter_objectives()
+        )
+        if not needs_flip:
+            return problem
 
-        else:
-            desired_problem = problem
+        desired_problem = copy.deepcopy(problem)
+        for obj in desired_problem.iter_objectives():
+            desired_sense = self._get_desired_sense(obj.sense)
+            if obj.sense != desired_sense:
+                obj.sense = desired_sense
+                obj.constant = (-1) * obj.constant
+                obj.linear = (-1) * obj.linear.coefficients
+                obj.quadratic = (-1) * obj.quadratic.coefficients
+                obj.higher_order = {
+                    degree: (-1) * ho.to_array() for degree, ho in obj.higher_order.items()
+                }
 
         return desired_problem
 
-    def _get_desired_sense(self, problem: OptimizationProblem) -> ObjSense:
-        """Computes a desired sense of the problem. By default, flip the sense.
+    def _get_desired_sense(self, current_sense: ObjSense) -> ObjSense:
+        """Computes a desired sense of the objective. By default, flip the sense.
 
         Args:
-            problem: a problem to check
+            current_sense: The current sense of the objective.
 
 
         Returns:
-            A desired sense, if the problem was a minimization problem, then the sense is
-            maximization and vice versa.
+            A desired sense, if the objective was minimization, then maximization and vice versa.
         """
-        if problem.objective.sense == ObjSense.MAXIMIZE:
+        if current_sense == ObjSense.MAXIMIZE:
             return ObjSense.MINIMIZE
         return ObjSense.MAXIMIZE
 
@@ -110,7 +116,7 @@ class MaximizeToMinimize(_FlipProblemSense):
     Otherwise problem's sense is unchanged.
     """
 
-    def _get_desired_sense(self, problem: OptimizationProblem) -> ObjSense:
+    def _get_desired_sense(self, current_sense: ObjSense) -> ObjSense:
         return ObjSense.MINIMIZE
 
 
@@ -120,5 +126,5 @@ class MinimizeToMaximize(_FlipProblemSense):
     Otherwise problem's sense is unchanged.
     """
 
-    def _get_desired_sense(self, problem: OptimizationProblem) -> ObjSense:
+    def _get_desired_sense(self, current_sense: ObjSense) -> ObjSense:
         return ObjSense.MAXIMIZE

@@ -13,13 +13,18 @@
 """The converter to map integer variables in a optimization problem to binary variables."""
 
 import copy
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
+
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class IntegerToBinary(OptimizationProblemConverter):
@@ -47,12 +52,12 @@ class IntegerToBinary(OptimizationProblemConverter):
 
     def __init__(self) -> None:
         """Class initializer."""
-        self._src: OptimizationProblem | None = None
-        self._dst: OptimizationProblem | None = None
+        self._src: BaseOptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._conv: dict[Variable, list[tuple[str, int]]] = {}
         # e.g., self._conv = {x: [('x@1', 1), ('x@2', 2)]}
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert an integer problem into a new problem with binary variables.
 
         Args:
@@ -70,7 +75,8 @@ class IntegerToBinary(OptimizationProblemConverter):
 
         if self._src.get_num_integer_vars() > 0:
             # Initialize new QP
-            self._dst = OptimizationProblem(name=problem.name)
+            dst = problem._new_empty()
+            self._dst = dst
 
             # Declare variables
             for x in self._src.variables:
@@ -117,9 +123,10 @@ class IntegerToBinary(OptimizationProblemConverter):
 
         else:
             # just copy the problem if no integer variables exist
-            self._dst = copy.deepcopy(problem)
+            dst = copy.deepcopy(problem)
+            self._dst = dst
 
-        return self._dst
+        return dst
 
     def _convert_var(
         self, name: str, lowerbound: float, upperbound: float
@@ -251,46 +258,45 @@ class IntegerToBinary(OptimizationProblemConverter):
         return higher_order, linear, constant
 
     def _substitute_int_var(self):
-        # set objective
-        linear, linear_constant = self._convert_linear_coefficients_dict(
-            self._src.objective.linear.to_dict(use_name=True)
-        )
-        (
-            quadratic,
-            q_linear,
-            q_constant,
-        ) = self._convert_quadratic_coefficients_dict(
-            self._src.objective.quadratic.to_dict(use_name=True)
-        )
-        ho, ho_linear, ho_constant = self._convert_higher_order_coefficients_dict(
-            self._src.objective.higher_order
-        )
+        # set objective(s)
+        for obj in self._src.iter_objectives():
+            linear, linear_constant = self._convert_linear_coefficients_dict(
+                obj.linear.to_dict(use_name=True)
+            )
+            (
+                quadratic,
+                q_linear,
+                q_constant,
+            ) = self._convert_quadratic_coefficients_dict(obj.quadratic.to_dict(use_name=True))
+            ho, ho_linear, ho_constant = self._convert_higher_order_coefficients_dict(
+                obj.higher_order
+            )
 
-        constant = self._src.objective.constant + linear_constant + q_constant + ho_constant
-        for i, v in q_linear.items():
-            linear[i] = linear.get(i, 0) + v
+            constant = obj.constant + linear_constant + q_constant + ho_constant
+            for i, v in q_linear.items():
+                linear[i] = linear.get(i, 0) + v
 
-        for i, v in ho_linear.items():
-            linear[i] = linear.get(i, 0) + v
+            for i, v in ho_linear.items():
+                linear[i] = linear.get(i, 0) + v
 
-        if 2 in ho:
-            for i, v in ho[2].items():
-                if (i[0], i[1]) in quadratic:
-                    quadratic[(i[0], i[1])] += v
-                elif (i[1], i[0]) in quadratic:
-                    quadratic[(i[1], i[0])] += v
-                else:
-                    quadratic[(i[0], i[1])] = v
-            ho.pop(2)
+            if 2 in ho:
+                for i, v in ho[2].items():
+                    if (i[0], i[1]) in quadratic:
+                        quadratic[(i[0], i[1])] += v
+                    elif (i[1], i[0]) in quadratic:
+                        quadratic[(i[1], i[0])] += v
+                    else:
+                        quadratic[(i[0], i[1])] = v
+                ho.pop(2)
 
-        self._dst._append_or_set_objective_from_parts(
-            self._src.objective.sense,
-            constant=constant,
-            linear=linear,
-            quadratic=quadratic,
-            higher_order=ho,
-            name=self._src.objective.name,
-        )
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=constant,
+                linear=linear,
+                quadratic=quadratic,
+                higher_order=ho,
+                name=obj.name,
+            )
 
         # set linear constraints
         for constraint in self._src.linear_constraints:

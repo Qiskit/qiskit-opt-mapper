@@ -1,0 +1,18 @@
+---
+features:
+  - |
+    All converters now accept both :class:`~qiskit_addon_opt_mapper.OptimizationProblem` and
+    :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem` (any
+    :class:`~qiskit_addon_opt_mapper.BaseOptimizationProblem`).
+    When given a :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem`, each converter
+    returns a :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem` with the converted
+    objectives in the same order, preserving their names and senses.
+    For the penalty-based converters :class:`~qiskit_addon_opt_mapper.converters.EqualityToPenalty`
+    and :class:`~qiskit_addon_opt_mapper.converters.LinearInequalityToPenalty`, when the penalty
+    factor is automatically computed, a single shared penalty factor is used across all objectives,
+    computed from the maximum bound span across all objectives (:math:`1 + \max_i(\text{span}_i)`).
+    An explicit user-provided penalty factor applies to all objectives.
+fixes:
+  - |
+    :class:`~qiskit_addon_opt_mapper.converters.EqualityToPenalty` now preserves the problem name
+    instead of dropping it during conversion.

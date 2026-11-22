@@ -16,18 +16,22 @@ import copy
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import cast
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint
 from ..problems.optimization_objective import OptimizationObjective
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
 
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 Monomial = tuple[str, ...]  # ()=const, ('x',)=linear, ('x','y')=quadratic, etc.
 Poly = dict[Monomial, float]
@@ -51,10 +55,10 @@ class EqualityToPenalty(OptimizationProblemConverter):
         self._src_num_vars: int | None = None
         self._penalty: float | None = penalty
         self._should_define_penalty: bool = penalty is None
-        self._src = OptimizationProblem()
-        self._dst = OptimizationProblem()
+        self._src: BaseOptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert a problem with equality constraints into an unconstrained problem.
 
         Args:
@@ -69,7 +73,8 @@ class EqualityToPenalty(OptimizationProblemConverter):
         """
         self._src = copy.deepcopy(problem)
         self._src_num_vars = problem.get_num_vars()
-        self._dst = OptimizationProblem()
+        dst = problem._new_empty()
+        self._dst = dst
 
         for var in problem.variables:
             if var.vartype == Variable.Type.BINARY:
@@ -111,94 +116,85 @@ class EqualityToPenalty(OptimizationProblemConverter):
             penalty = self._auto_define_penalty(problem)
             logger.info("Automatically defined penalty factor: %f", penalty)
         else:
-            penalty = cast(float, self._penalty)
+            assert self._penalty is not None
+            penalty = self._penalty
             if penalty <= 0:
                 raise OptimizationError("Penalty factor must be positive.")
             logger.info("Using user-defined penalty factor: %f", penalty)
 
-        offset = problem.objective.constant
-        linear = problem.objective.linear.to_dict(use_name=True)
-        quadratic = problem.objective.quadratic.to_dict(use_name=True)
-        ho = {d: expr.to_dict(use_name=True) for d, expr in problem.objective.higher_order.items()}
-        sense = 1 if problem.objective.sense == OptimizationObjective.Sense.MINIMIZE else -1
-
-        def add_poly_to_objective(poly: Poly, scale: float):
-            """Add `scale * poly` into (offset, linear, quadratic, ho).
-
-            Poly may include any degree.
-            """
-            # Poly may have constant term
-            const, linc, quadc, hoc = _poly_split_by_degree(poly)
-            nonlocal offset
-            offset += sense * scale * const
-            for x, c in linc.items():
-                if c:
-                    linear[x] = linear.get(x, 0.0) + sense * scale * c
-            for (i, j), c in quadc.items():
-                if c:
-                    tup = (i, j)
-                    quadratic[tup] = quadratic.get(tup, 0.0) + sense * scale * c
-            for d, terms in hoc.items():
-                tgt = ho.setdefault(d, {})
-                for names, c in terms.items():
-                    if c:
-                        tgt[names] = tgt.get(names, 0.0) + sense * scale * c
-
-        # --- Handle each equality constraint (linear, quadratic, higher order) ---
-        def handle_eq_constraint(constraint: Constraint):
-            # Check sense of constraint
+        all_constraints = (
+            list(problem.linear_constraints)
+            + list(problem.quadratic_constraints)
+            + list(problem.higher_order_constraints)
+        )
+        for con in all_constraints:
             if con.sense != Constraint.Sense.EQ:
                 raise OptimizationError(
                     "An inequality constraint exists. Only equality constraints are supported."
                 )
 
-            c = float(constraint.rhs)
-            # Build f(x) = linear + quadratic + higher
-            f: Poly = {}
-            _poly_add(f, _poly_from_constraint_linear(constraint))
-            if getattr(constraint, "quadratic", None):
-                _poly_add(f, _poly_from_constraint_quadratic(constraint))
-            if getattr(constraint, "higher_order", None):
-                _poly_add(f, _poly_from_constraint_higher(constraint))
+        def _add_poly_to_objective(
+            poly: Poly,
+            scale: float,
+            obj_sense: int,
+            lin_dict: dict[int | str, float],
+            quad_dict: dict[tuple[int, int] | tuple[str, str], float],
+            ho_dict: dict[int, dict[tuple[int, ...] | tuple[str, ...], float]],
+        ) -> float:
+            const, linc, quadc, hoc = _poly_split_by_degree(poly)
+            for x, c in linc.items():
+                if c:
+                    lin_dict[x] = lin_dict.get(x, 0.0) + obj_sense * scale * c
+            for (i, j), c in quadc.items():
+                if c:
+                    tup = (i, j)
+                    quad_dict[tup] = quad_dict.get(tup, 0.0) + obj_sense * scale * c
+            for d, terms in hoc.items():
+                tgt = ho_dict.setdefault(d, {})
+                for names, c in terms.items():
+                    if c:
+                        tgt[names] = tgt.get(names, 0.0) + obj_sense * scale * c
+            return float(obj_sense * scale * const)
 
-            # (1) +P * c^2  (Constant)
-            offset_nonlocal = c * c
-            nonlocal offset
-            offset += sense * penalty * offset_nonlocal
+        for obj in problem.iter_objectives():
+            offset = obj.constant
+            linear = obj.linear.to_dict(use_name=True)
+            quadratic = obj.quadratic.to_dict(use_name=True)
+            ho = {d: expr.to_dict(use_name=True) for d, expr in obj.higher_order.items()}
+            sense = 1 if obj.sense == OptimizationObjective.Sense.MINIMIZE else -1
 
-            # (2) -2Pc * f(x)  (Linear terms)
-            add_poly_to_objective(f, scale=(-2.0 * penalty * c))
+            for con in all_constraints:
+                c = float(con.rhs)
+                f: Poly = {}
+                _poly_add(f, _poly_from_constraint_linear(con))
+                if getattr(con, "quadratic", None):
+                    _poly_add(f, _poly_from_constraint_quadratic(con))
+                if getattr(con, "higher_order", None):
+                    _poly_add(f, _poly_from_constraint_higher(con))
 
-            # (3) +P * f(x)^2  (Quadratic terms)
-            f2 = _poly_mul(f, f)
-            add_poly_to_objective(f2, scale=penalty)
+                offset += sense * penalty * (c * c)
+                offset += _add_poly_to_objective(
+                    f, -2.0 * penalty * c, sense, linear, quadratic, ho
+                )
+                f2 = _poly_mul(f, f)
+                offset += _add_poly_to_objective(f2, penalty, sense, linear, quadratic, ho)
 
-        # Check if any inequality constraint exists
-        for con in problem.linear_constraints:
-            handle_eq_constraint(con)
-
-        for con in problem.quadratic_constraints:  # type: ignore
-            handle_eq_constraint(con)  # type: ignore
-
-        for con in problem.higher_order_constraints:  # type: ignore
-            handle_eq_constraint(con)  # type: ignore
-
-        self._dst._append_or_set_objective_from_parts(
-            problem.objective.sense,
-            constant=offset,
-            linear=linear,
-            quadratic=quadratic,
-            higher_order=ho,  # type: ignore[arg-type]
-            name=problem.objective.name,
-        )
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=offset,
+                linear=linear,
+                quadratic=quadratic,
+                higher_order=ho,  # type: ignore[arg-type]
+                name=obj.name,
+            )
 
         # Update the penalty to the one just used
         self._penalty = penalty
 
-        return self._dst
+        return dst
 
     @staticmethod
-    def _auto_define_penalty(problem: OptimizationProblem) -> float:
+    def _auto_define_penalty(problem: "BaseOptimizationProblem") -> float:
         """Automatically define the penalty coefficient.
 
         Returns:
@@ -225,15 +221,20 @@ class EqualityToPenalty(OptimizationProblemConverter):
             )
             return default_penalty
 
-        lin_b = problem.objective.linear.bounds
-        quad_b = problem.objective.quadratic.bounds
-        ho_b = [ho_exp.bounds for ho_exp in problem.objective.higher_order.values()]
-        return (
-            1.0
-            + (lin_b.upperbound - lin_b.lowerbound)
-            + (quad_b.upperbound - quad_b.lowerbound)
-            + sum((b.upperbound - b.lowerbound) for b in ho_b)
-        )
+        max_bound = 0.0
+        for obj in problem.iter_objectives():
+            lin_b = obj.linear.bounds
+            quad_b = obj.quadratic.bounds
+            ho_b = [ho_exp.bounds for ho_exp in obj.higher_order.values()]
+            span = (
+                (lin_b.upperbound - lin_b.lowerbound)
+                + (quad_b.upperbound - quad_b.lowerbound)
+                + sum((b.upperbound - b.lowerbound) for b in ho_b)
+            )
+            if span > max_bound:
+                max_bound = span
+
+        return float(1.0 + max_bound)
 
     def interpret(self, x: np.ndarray | list[float]) -> np.ndarray:
         """Convert the result of the converted problem back to that of the original problem.
