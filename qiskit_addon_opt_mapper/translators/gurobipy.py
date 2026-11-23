@@ -204,14 +204,17 @@ def from_gurobipy(model: Model) -> OptimizationProblem:
 
     # Retrieve the objective
     objective = model.getObjective()
-    has_quadratic_objective = False
 
     # Retrieve the linear part in case it is a quadratic objective
+    quad_objective: QuadExpr | None
     if isinstance(objective, gp.QuadExpr):
+        quad_objective = objective
         linear_part = objective.getLinExpr()
-        has_quadratic_objective = True
-    else:
+    elif isinstance(objective, gp.LinExpr):
+        quad_objective = None
         linear_part = objective
+    else:
+        raise OptimizationError(f"Unsupported objective type: {type(objective).__name__}")
 
     # Get the constant
     constant = linear_part.getConstant()
@@ -223,11 +226,11 @@ def from_gurobipy(model: Model) -> OptimizationProblem:
 
     # get quadratic part of objective
     quadratic = {}
-    if has_quadratic_objective:
-        for i in range(objective.size()):
-            var1 = var_names[cast(QuadExpr, objective).getVar1(i)]
-            var2 = var_names[cast(QuadExpr, objective).getVar2(i)]
-            coeff = objective.getCoeff(i)
+    if quad_objective is not None:
+        for i in range(quad_objective.size()):
+            var1 = var_names[quad_objective.getVar1(i)]
+            var2 = var_names[quad_objective.getVar2(i)]
+            coeff = quad_objective.getCoeff(i)
             quadratic[var1, var2] = coeff
 
     # set objective
