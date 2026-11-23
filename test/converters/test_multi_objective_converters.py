@@ -9,13 +9,13 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Tests for MultiObjectiveProblem support in all converters."""
+"""Tests for MultiObjectiveProblem support in converters."""
 
 import warnings
 
 import numpy as np
 import pytest
-from qiskit_addon_opt_mapper import MultiObjectiveProblem, OptimizationProblem
+from qiskit_addon_opt_mapper import MultiObjectiveProblem, OptimizationError, OptimizationProblem
 from qiskit_addon_opt_mapper.converters import (
     BinaryToLinearBinary,
     BinaryToSpin,
@@ -115,16 +115,19 @@ def _make_linear_inequality_mo():
     return problem
 
 
-CONVERTER_MO_BUILDERS = [
+SUPPORTED_MO_CONVERTERS = [
     (BinaryToSpin, _make_binary_mo),
     (SpinToBinary, _make_spin_mo),
     (BinaryToLinearBinary, _make_higher_order_mo),
     (IntegerToBinary, _make_integer_mo),
     (InequalityToEquality, _make_inequality_mo),
-    (EqualityToPenalty, _make_equality_mo),
-    (LinearInequalityToPenalty, _make_linear_inequality_mo),
     (MaximizeToMinimize, _make_binary_mo),
     (MinimizeToMaximize, _make_binary_mo),
+]
+
+UNSUPPORTED_MO_CONVERTERS = [
+    (EqualityToPenalty, _make_equality_mo),
+    (LinearInequalityToPenalty, _make_linear_inequality_mo),
     (OptimizationProblemToQubo, _make_equality_mo),
     (OptimizationProblemToHubo, _make_equality_mo),
 ]
@@ -188,11 +191,11 @@ def _assert_objectives_equal(obj1, obj2):
 
 @pytest.mark.parametrize(
     ("converter_cls", "builder"),
-    CONVERTER_MO_BUILDERS,
-    ids=[c.__name__ for c, _ in CONVERTER_MO_BUILDERS],
+    SUPPORTED_MO_CONVERTERS,
+    ids=[c.__name__ for c, _ in SUPPORTED_MO_CONVERTERS],
 )
-def test_all_converters_convert_multi_objective_problem(converter_cls, builder):
-    """Every converter preserves MultiObjectiveProblem class, objective order, names, and values."""
+def test_all_supported_converters_convert_multi_objective_problem(converter_cls, builder):
+    """Supported converters preserve MultiObjectiveProblem class, objective order, names, and values."""
     mo_problem = builder()
     so_problem0 = _build_so_from_mo(mo_problem, 0)
     so_problem1 = _build_so_from_mo(mo_problem, 1)
@@ -200,13 +203,8 @@ def test_all_converters_convert_multi_objective_problem(converter_cls, builder):
     conv = converter_cls()
     converted_mo = conv.convert(mo_problem)
 
-    # Use the penalty determined for the MO problem if applicable
-    if hasattr(conv, "penalty") and conv.penalty is not None:
-        conv0 = converter_cls(penalty=conv.penalty)
-        conv1 = converter_cls(penalty=conv.penalty)
-    else:
-        conv0 = converter_cls()
-        conv1 = converter_cls()
+    conv0 = converter_cls()
+    conv1 = converter_cls()
 
     converted_so0 = conv0.convert(so_problem0)
     converted_so1 = conv1.convert(so_problem1)
@@ -219,9 +217,29 @@ def test_all_converters_convert_multi_objective_problem(converter_cls, builder):
     _assert_objectives_equal(converted_mo.get_objective(1), converted_so1.objective)
 
 
+@pytest.mark.parametrize(
+    ("converter_cls", "builder"),
+    UNSUPPORTED_MO_CONVERTERS,
+    ids=[c.__name__ for c, _ in UNSUPPORTED_MO_CONVERTERS],
+)
+def test_unsupported_converters_raise_on_multi_objective_problem(converter_cls, builder):
+    """Penalty-based converters reject MultiObjectiveProblem to avoid spreading penalties across objectives."""
+    mo_problem = builder()
+    conv = converter_cls()
+    if hasattr(conv, "is_compatible"):
+        assert not conv.is_compatible(mo_problem)
+        msg = conv.get_compatibility_msg(mo_problem)
+        assert "MultiObjectiveProblem" in msg or "Multi-objective" in msg
+
+    with pytest.raises(OptimizationError):
+        conv.convert(mo_problem)
+
+
 def test_all_converters_are_registered_for_multi_objective():
-    """Ensure any newly added converter is registered in the multi-objective test suite."""
-    all_registered = {c for c, _ in CONVERTER_MO_BUILDERS}
+    """Ensure every converter subclass is classified as supported or unsupported for MO."""
+    all_registered = {c for c, _ in SUPPORTED_MO_CONVERTERS} | {
+        c for c, _ in UNSUPPORTED_MO_CONVERTERS
+    }
     subs = _all_subclasses(OptimizationProblemConverter)
     concrete_public = {
         c
@@ -234,8 +252,8 @@ def test_all_converters_are_registered_for_multi_objective():
 
 @pytest.mark.parametrize(
     ("converter_cls", "builder"),
-    CONVERTER_MO_BUILDERS,
-    ids=[c.__name__ for c, _ in CONVERTER_MO_BUILDERS],
+    SUPPORTED_MO_CONVERTERS,
+    ids=[c.__name__ for c, _ in SUPPORTED_MO_CONVERTERS],
 )
 def test_converter_with_zero_and_one_objective_multi_objective_problem(converter_cls, builder):
     """A MultiObjectiveProblem with 0 or 1 objective converts cleanly."""
@@ -250,10 +268,10 @@ def test_converter_with_zero_and_one_objective_multi_objective_problem(converter
     for lc in base_mo.linear_constraints:
         zero_mo.linear_constraint(lc.linear.to_dict(use_name=True), lc.sense, lc.rhs, lc.name)
 
-    conv_zero = converter_cls().convert(zero_mo)
-    assert isinstance(conv_zero, MultiObjectiveProblem)
-    assert conv_zero.get_num_objectives() == 0
-    assert conv_zero.name == base_mo.name
+    conv_zero = converter_cls()
+    res_zero = conv_zero.convert(zero_mo)
+    assert isinstance(res_zero, MultiObjectiveProblem)
+    assert res_zero.get_num_objectives() == 0
 
     # One objective
     one_mo = MultiObjectiveProblem(name=base_mo.name)
@@ -273,68 +291,70 @@ def test_converter_with_zero_and_one_objective_multi_objective_problem(converter
         name=obj0.name,
     )
 
-    conv_one = converter_cls().convert(one_mo)
-    assert isinstance(conv_one, MultiObjectiveProblem)
-    assert conv_one.get_num_objectives() == 1
-    assert conv_one.get_objective(0).name == obj0.name
+    conv_one = converter_cls()
+    res_one = conv_one.convert(one_mo)
+    assert isinstance(res_one, MultiObjectiveProblem)
+    assert res_one.get_num_objectives() == 1
+    assert res_one.get_objective(0).name == obj0.name
 
 
 @pytest.mark.parametrize(
     ("converter_cls", "builder"),
-    CONVERTER_MO_BUILDERS,
-    ids=[c.__name__ for c, _ in CONVERTER_MO_BUILDERS],
+    SUPPORTED_MO_CONVERTERS,
+    ids=[c.__name__ for c, _ in SUPPORTED_MO_CONVERTERS],
 )
-def test_converter_does_not_rewarn_for_non_printable_name_in_multi_objective(
-    converter_cls, builder
-):
-    """Non-printable objective names in MultiObjectiveProblem do not re-warn during conversion."""
-    mo_problem = builder()
-    bad_mo = MultiObjectiveProblem()
-    for v in mo_problem.variables:
-        bad_mo._add_variable(
+def test_converter_does_not_rewarn_for_non_printable_name_on_mo(converter_cls, builder):
+    """Non-printable objective name in MultiObjectiveProblem does not emit extra warnings during conversion."""
+    base_mo = builder()
+    mo_problem = MultiObjectiveProblem(name=base_mo.name)
+    for v in base_mo.variables:
+        mo_problem._add_variable(
             name=v.name, vartype=v.vartype, lowerbound=v.lowerbound, upperbound=v.upperbound
         )
-    for lc in mo_problem.linear_constraints:
-        bad_mo.linear_constraint(lc.linear.to_dict(use_name=True), lc.sense, lc.rhs, lc.name)
+    for lc in base_mo.linear_constraints:
+        mo_problem.linear_constraint(lc.linear.to_dict(use_name=True), lc.sense, lc.rhs, lc.name)
 
-    for i in range(mo_problem.get_num_objectives()):
-        obj = mo_problem.get_objective(i)
-        bad_mo._append_or_set_objective_from_parts(
-            obj.sense,
-            constant=obj.constant,
-            linear=obj.linear.to_dict(use_name=True),
-            quadratic=obj.quadratic.to_dict(use_name=True),
-            higher_order={d: expr.to_dict(use_name=True) for d, expr in obj.higher_order.items()},
-            name=f"bad\nname_{i}",
+    with pytest.warns(UserWarning, match="Objective name is not printable"):
+        mo_problem.add_objective(
+            sense="min", name="bad\nname1", linear={v.name: 1 for v in mo_problem.variables}
+        )
+        mo_problem.add_objective(
+            sense="max", name="bad\nname2", linear={v.name: 2 for v in mo_problem.variables}
         )
 
-    with warnings.catch_warnings(record=True) as caught:
+    conv = converter_cls()
+    with warnings.catch_warnings(record=True) as recorded:
         warnings.simplefilter("always")
-        converter_cls().convert(bad_mo)
-    assert not [w for w in caught if "not printable" in str(w.message)]
+        conv.convert(mo_problem)
+
+    name_warnings = [
+        w
+        for w in recorded
+        if issubclass(w.category, UserWarning)
+        and "Objective name is not printable" in str(w.message)
+    ]
+    assert not name_warnings, f"Unexpected warnings: {name_warnings}"
 
 
-def test_equality_to_penalty_preserves_problem_name():
-    """EqualityToPenalty preserves problem name for both OptimizationProblem and MultiObjectiveProblem."""
-    so_problem = OptimizationProblem(name="my_so_problem")
-    so_problem.binary_var("x")
-    so_problem.linear_constraint({"x": 1}, "==", 1, name="c0")
-    so_problem.minimize(linear={"x": 1})
-    conv_so = EqualityToPenalty().convert(so_problem)
-    assert conv_so.name == "my_so_problem"
+def test_equality_to_penalty_preserves_single_objective_name():
+    """EqualityToPenalty preserves problem name on single-objective OptimizationProblem."""
+    qp = OptimizationProblem(name="my_named_problem")
+    qp.binary_var("x")
+    qp.binary_var("y")
+    qp.linear_constraint({"x": 1, "y": 1}, "==", 1, name="c0")
+    qp.minimize(name="my_obj", linear={"x": 1, "y": 2})
 
-    mo_problem = MultiObjectiveProblem(name="my_mo_problem")
-    mo_problem.binary_var("x")
-    mo_problem.linear_constraint({"x": 1}, "==", 1, name="c0")
-    mo_problem.add_objective(sense="min", name="cost", linear={"x": 1})
-    conv_mo = EqualityToPenalty().convert(mo_problem)
-    assert conv_mo.name == "my_mo_problem"
+    conv = EqualityToPenalty(penalty=10.0)
+    converted = conv.convert(qp)
+    assert isinstance(converted, OptimizationProblem)
+    assert converted.name == "my_named_problem"
+    assert converted.objective.name == "my_obj"
 
 
 @pytest.mark.parametrize(
     ("converter_cls", "builder"),
-    CONVERTER_MO_BUILDERS,
-    ids=[c.__name__ for c, _ in CONVERTER_MO_BUILDERS],
+    SUPPORTED_MO_CONVERTERS,
+    ids=[c.__name__ for c, _ in SUPPORTED_MO_CONVERTERS],
 )
 def test_interpret_matches_single_objective(converter_cls, builder):
     """interpret(x) on converted MultiObjectiveProblem matches single-objective interpret."""
@@ -357,57 +377,3 @@ def test_interpret_matches_single_objective(converter_cls, builder):
     # Check that the original variable values returned match
     orig_num_vars = mo_problem.get_num_vars()
     np.testing.assert_array_equal(res_mo[:orig_num_vars], res_so[:orig_num_vars])
-
-
-def test_shared_penalty_feasibility_guarantee():
-    """Shared penalty in EqualityToPenalty and LinearInequalityToPenalty guarantees feasibility."""
-    # Multi-objective problem with 2 binary variables and an equality constraint x + y == 1
-    # Feasible solutions: (1, 0) and (0, 1). Infeasible: (0, 0) and (1, 1).
-    mo = MultiObjectiveProblem()
-    mo.binary_var("x")
-    mo.binary_var("y")
-    mo.linear_constraint({"x": 1, "y": 1}, "==", 1, name="c0")
-    mo.add_objective(sense="min", name="f1", linear={"x": 10, "y": -5})
-    mo.add_objective(sense="min", name="f2", linear={"x": -2, "y": 8})
-
-    conv = EqualityToPenalty()
-    penalized = conv.convert(mo)
-
-    # For both objectives, feasible points must have lower penalized objective than infeasible points
-    for obj_idx in range(2):
-        obj = penalized.get_objective(obj_idx)
-        feasible_vals = [obj.evaluate([1, 0]), obj.evaluate([0, 1])]
-        infeasible_vals = [obj.evaluate([0, 0]), obj.evaluate([1, 1])]
-        assert min(infeasible_vals) > min(feasible_vals)
-
-    # Test LinearInequalityToPenalty on x <= y constraint
-    mo_ineq = MultiObjectiveProblem()
-    mo_ineq.binary_var("x")
-    mo_ineq.binary_var("y")
-    mo_ineq.linear_constraint({"x": 1, "y": -1}, "<=", 0, name="c0")
-    mo_ineq.add_objective(sense="min", name="f1", linear={"x": 10, "y": -5})
-    mo_ineq.add_objective(sense="min", name="f2", linear={"x": -2, "y": 8})
-
-    conv_ineq = LinearInequalityToPenalty()
-    penalized_ineq = conv_ineq.convert(mo_ineq)
-
-    # Feasible: (0, 0), (0, 1), (1, 1). Infeasible: (1, 0)
-    for obj_idx in range(2):
-        obj = penalized_ineq.get_objective(obj_idx)
-        feasible_vals = [obj.evaluate([0, 0]), obj.evaluate([0, 1]), obj.evaluate([1, 1])]
-        infeasible_val = obj.evaluate([1, 0])
-        assert infeasible_val > min(feasible_vals)
-
-
-def test_qubo_compatibility_checks_all_objectives():
-    """OptimizationProblemToQubo flags higher-order terms in any objective."""
-    mo = MultiObjectiveProblem()
-    mo.binary_var("x")
-    mo.binary_var("y")
-    mo.binary_var("z")
-    mo.add_objective(sense="min", name="f1", linear={"x": 1})
-    mo.add_objective(sense="min", name="f2", higher_order={3: {("x", "y", "z"): 1.0}})
-    conv = OptimizationProblemToQubo()
-    assert not conv.is_compatible(mo)
-    msg = conv.get_compatibility_msg(mo)
-    assert "Higher order objective functions are not supported" in msg

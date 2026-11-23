@@ -71,6 +71,13 @@ class EqualityToPenalty(OptimizationProblemConverter):
         Raises:
             OptimizationError: If an inequality constraint exists.
         """
+        if problem.is_multi_objective:
+            raise OptimizationError(
+                "MultiObjectiveProblem is not supported for EqualityToPenalty. "
+                "In multi-objective optimization, constraints should not be folded as "
+                "penalties into existing objectives."
+            )
+
         self._src = copy.deepcopy(problem)
         self._src_num_vars = problem.get_num_vars()
         dst = problem._new_empty()

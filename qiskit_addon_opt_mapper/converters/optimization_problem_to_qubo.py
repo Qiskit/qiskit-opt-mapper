@@ -135,6 +135,8 @@ class OptimizationProblemToQubo(OptimizationProblemConverter):
         """
         # initialize message
         msg = ""
+        if problem.is_multi_objective:
+            msg += "MultiObjectiveProblem is not supported. "
         # check whether there are incompatible variable types
         if problem.get_num_continuous_vars() > 0:
             msg += "Continuous variables are not supported. "

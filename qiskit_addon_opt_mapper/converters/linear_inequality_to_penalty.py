@@ -104,6 +104,13 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
         Raises:
             OptimizationError: If an unsupported-type variable exists.
         """
+        if problem.is_multi_objective:
+            raise OptimizationError(
+                "MultiObjectiveProblem is not supported for LinearInequalityToPenalty. "
+                "In multi-objective optimization, constraints should not be folded as "
+                "penalties into existing objectives."
+            )
+
         # create empty OptimizationProblem model
         self._src_num_vars = problem.get_num_vars()
         dst = problem._new_empty()
