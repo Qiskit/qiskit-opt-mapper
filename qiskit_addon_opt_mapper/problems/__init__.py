@@ -52,7 +52,7 @@ from .constraint import Constraint
 from .higher_order_constraint import HigherOrderConstraint
 from .higher_order_expression import HigherOrderExpression
 from .linear_constraint import LinearConstraint
-from .linear_expression import LinearExpression
+from .linear_expression import LinearExpression, Representation
 from .multi_objective_problem import MultiObjectiveProblem
 from .optimization_objective import ObjSense, OptimizationObjective
 from .optimization_problem import OptimizationProblem
