@@ -357,6 +357,37 @@ def test_to_isings_without_objectives_rejects_constraints():
         to_isings(problem)
 
 
+def test_to_isings_rejects_higher_order_constraints():
+    """A higher-order constraint is rejected like a linear or quadratic one."""
+    problem = MultiObjectiveProblem("p")
+    for name in "xyz":
+        problem.binary_var(name)
+    problem.add_objective(linear={"x": 1})
+    problem.higher_order_constraint(higher_order={3: {(0, 1, 2): 1}}, sense="==", rhs=1)
+    with pytest.raises(OptimizationError, match="There must be no constraint"):
+        to_isings(problem)
+
+
+def test_to_ising_rejects_higher_order_constraints():
+    """``to_ising`` rejects higher-order constraints for a single-objective problem."""
+    problem = OptimizationProblem("p")
+    for name in "xyz":
+        problem.binary_var(name)
+    problem.minimize(linear={"x": 1})
+    problem.higher_order_constraint(higher_order={3: {(0, 1, 2): 1}}, sense="==", rhs=1)
+    with pytest.raises(OptimizationError, match="There must be no constraint"):
+        to_ising(problem)
+
+
+def test_to_isings_continuous_variable_message_does_not_suggest_qubo():
+    """The error says continuous variables are unsupported instead of pointing to the QUBO converter."""
+    problem = MultiObjectiveProblem("p")
+    problem.continuous_var(name="c")
+    with pytest.raises(OptimizationError, match="Continuous variables are not supported") as err:
+        to_isings(problem)
+    assert "OptimizationProblemToQubo" not in str(err.value)
+
+
 def test_to_isings_without_objectives_rejects_continuous_or_integer_variables():
     """Zero-objective problems with continuous/integer variables raise OptimizationError."""
     problem_cont = MultiObjectiveProblem("p")

@@ -144,7 +144,7 @@ class OptimizationProblem(BaseOptimizationProblem):
         """
         return False
 
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         """Iterates over the objectives of this problem.
 
         Returns:

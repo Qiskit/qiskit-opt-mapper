@@ -230,14 +230,13 @@ def prettyprint(optimization_problem: BaseOptimizationProblem, wrap: int = 80) -
         buf.write(f"Problem name: {optimization_problem.name}\n\n")
 
         if not optimization_problem.is_multi_objective:
-            obj = next(optimization_problem._iter_objectives())  # pylint: disable=protected-access
+            obj = next(optimization_problem.iter_objectives())
             buf.write(_objective_block(obj, wrap=wrap))
         else:
             # Objectives are separated by a single newline; the last one has no trailing newline
             # so that the shared "\n\nSubject to" below leaves exactly one blank line.
             objective_blocks = [
-                _objective_block(obj, wrap=wrap)
-                for obj in optimization_problem._iter_objectives()  # pylint: disable=protected-access
+                _objective_block(obj, wrap=wrap) for obj in optimization_problem.iter_objectives()
             ]
             buf.write("\n".join(objective_blocks) if objective_blocks else "  No objectives")
 

@@ -13,6 +13,7 @@
 """Test from_gurobipy and to_gurobipy"""
 
 import unittest
+import unittest.mock
 from os import path
 from tempfile import TemporaryDirectory
 
@@ -117,6 +118,23 @@ class TestGurobiTranslator(OptimizationTestCase):
         mod.update()
         self.assertEqual(mod.NumConstrs, 0)
         self.assertEqual(mod.NumQConstrs, 0)
+
+    @unittest.skipIf(not _optionals.HAS_GUROBIPY, "Gurobi not available.")
+    def test_from_gurobipy_raises_on_unsupported_objective_type(self):
+        """from_gurobipy() raises OptimizationError for an objective that is neither
+        a LinExpr nor a QuadExpr (e.g. a nonlinear NLExpr or any other object)."""
+        # pylint: disable=import-error
+        import gurobipy as gp
+
+        mod = gp.Model()
+        mod.addVar(vtype=gp.GRB.BINARY, name="x")
+        # gurobipy.Model is a C-extension type, so getObjective can't be monkeypatched on the
+        # instance; patch the class method instead.
+        with (
+            unittest.mock.patch.object(gp.Model, "getObjective", lambda self: object()),
+            self.assertRaises(OptimizationError),
+        ):
+            _ = from_gurobipy(mod)
 
 
 if __name__ == "__main__":

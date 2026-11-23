@@ -37,7 +37,7 @@ class _MissingStrHook(BaseOptimizationProblem):
     def is_multi_objective(self) -> bool:
         return False
 
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         return iter(())
 
     def _objectives_repr(self) -> str:
@@ -100,7 +100,7 @@ class _MissingSetObjectiveHook(BaseOptimizationProblem):
     def is_multi_objective(self) -> bool:
         return False
 
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         return iter(())
 
     def _objectives_repr(self) -> str:
@@ -116,7 +116,7 @@ class _MissingIsMultiObjectiveHook(BaseOptimizationProblem):
     def _reset_objectives(self) -> None:
         pass
 
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         return iter(())
 
     def _objectives_repr(self) -> str:
@@ -130,7 +130,7 @@ class _MissingIsMultiObjectiveHook(BaseOptimizationProblem):
 
 
 class _MissingIterObjectivesHook(BaseOptimizationProblem):
-    """Subclass that implements every hook except ``_iter_objectives``."""
+    """Subclass that implements every hook except ``iter_objectives``."""
 
     def _reset_objectives(self) -> None:
         pass
@@ -159,11 +159,11 @@ def test_missing_set_objective_hook_is_abstract():
     ("subclass", "hook"),
     [
         (_MissingIsMultiObjectiveHook, "is_multi_objective"),
-        (_MissingIterObjectivesHook, "_iter_objectives"),
+        (_MissingIterObjectivesHook, "iter_objectives"),
     ],
 )
 def test_missing_single_new_hook_is_abstract(subclass, hook):
-    """``is_multi_objective`` and ``_iter_objectives`` are abstract hooks."""
+    """``is_multi_objective`` and ``iter_objectives`` are abstract hooks."""
     with pytest.raises(TypeError, match=hook):
         subclass("p")
 
@@ -377,7 +377,7 @@ def test_clear_resets_everything(problem):
     assert problem.get_num_linear_constraints() == 0
     assert problem.get_num_quadratic_constraints() == 0
     assert problem.get_num_higher_order_constraints() == 0
-    objectives = list(problem._iter_objectives())  # pylint: disable=protected-access
+    objectives = list(problem.iter_objectives())
     assert len(objectives) == (0 if problem.is_multi_objective else 1)
     assert all(
         obj.constant == 0 and not obj.linear.to_dict() and not obj.quadratic.to_dict()
@@ -386,11 +386,11 @@ def test_clear_resets_everything(problem):
 
 
 def test_iter_objectives_matches_subclass(problem):
-    """``_iter_objectives`` yields one objective for single, all objectives for multi."""
+    """``iter_objectives`` yields one objective for single, all objectives for multi."""
     _add_objective(problem, constant=1)
     if problem.is_multi_objective:
         _add_objective(problem, constant=2)
-    objectives = list(problem._iter_objectives())  # pylint: disable=protected-access
+    objectives = list(problem.iter_objectives())
     assert len(objectives) == (2 if problem.is_multi_objective else 1)
     assert objectives[0].constant == 1
 
@@ -421,7 +421,7 @@ def test_copy_from_reparents_variables_constraints_and_objectives(problem):
     assert all(c.optimization_problem is target for c in target.linear_constraints)
     assert all(c.optimization_problem is target for c in target.quadratic_constraints)
     assert all(c.optimization_problem is target for c in target.higher_order_constraints)
-    for obj in target._iter_objectives():  # pylint: disable=protected-access
+    for obj in target.iter_objectives():
         assert obj.optimization_problem is target
 
 

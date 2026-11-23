@@ -67,9 +67,10 @@ class BaseOptimizationProblem(ABC):
 
     Subclasses must implement six hooks: ``_reset_objectives`` (called by ``__init__`` and
     ``clear``, before any subclass ``__init__`` code runs), ``is_multi_objective``,
-    ``_iter_objectives``, ``_objectives_repr``, ``_objectives_str`` and
+    ``iter_objectives``, ``_objectives_repr``, ``_objectives_str`` and
     ``_append_or_set_objective_from_parts``. Objective state must be stored in instance attributes,
-    because ``_copy_from`` copies every attribute of the source problem.
+    because ``_copy_from`` copies every attribute of the source problem. ``__init__`` of a
+    subclass must accept ``name`` as its only required argument, because ``_new_empty`` calls it.
     """
 
     Status = OptimizationProblemStatus
@@ -170,7 +171,7 @@ class BaseOptimizationProblem(ABC):
         """
 
     @abstractmethod
-    def _iter_objectives(self) -> Iterator[OptimizationObjective]:
+    def iter_objectives(self) -> Iterator[OptimizationObjective]:
         """Iterates over the objectives of this problem in objective order.
 
         Returns:
@@ -210,8 +211,7 @@ class BaseOptimizationProblem(ABC):
         appends to them. ``OptimizationProblem`` does not check ``name``: callers that receive the
         name from a user, such as ``minimize``, check it first. Callers that copy an objective that
         was already checked, such as the converters, call this method directly so that the warning
-        for a non-printable name is not repeated. ``MultiObjectiveProblem`` does check ``name``,
-        so a copy warns again for a non-printable name.
+        for a non-printable name is not repeated. ``MultiObjectiveProblem`` behaves the same way.
 
         Args:
             sense: The sense of the objective.
