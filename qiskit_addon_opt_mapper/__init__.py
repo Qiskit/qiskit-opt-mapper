@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -19,11 +19,15 @@ Optimization Add-on module (:mod:`qiskit_addon_opt_mapper`)
 
 from .exceptions import AlgorithmError, OptimizationError
 from .infinity import INFINITY
+from .problems.base_optimization_problem import BaseOptimizationProblem
+from .problems.multi_objective_problem import MultiObjectiveProblem
 from .problems.optimization_problem import OptimizationProblem
 
 __all__ = [
     "INFINITY",
     "AlgorithmError",
+    "BaseOptimizationProblem",
+    "MultiObjectiveProblem",
     "OptimizationError",
     "OptimizationProblem",
 ]

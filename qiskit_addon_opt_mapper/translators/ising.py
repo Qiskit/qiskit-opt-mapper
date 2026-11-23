@@ -38,39 +38,84 @@ def to_ising(optimization_problem: OptimizationProblem) -> tuple[SparsePauliOp, 
         and offset for the constant value in the Ising Hamiltonian.
 
     Raises:
-        OptimizationError: If an integer variable or a continuous variable exists
-            in the problem.
+        OptimizationError: If variables are neither only binary nor only spin.
         OptimizationError: If constraints exist in the problem.
     """
-    # if constraints exist, raise an error
-    if optimization_problem.linear_constraints or optimization_problem.quadratic_constraints:
+    return _objective_to_ising(optimization_problem, optimization_problem.objective)
+
+
+def _validate_problem_for_ising(problem: BaseOptimizationProblem) -> None:
+    """Validate that problem has no constraints and contains only binary or spin variables."""
+    if (
+        problem.linear_constraints
+        or problem.quadratic_constraints
+        or problem.higher_order_constraints
+    ):
         raise OptimizationError(
             "There must be no constraint in the problem. "
             "You can use `OptimizationProblemToQubo` converter "
             "to convert constraints to penalty terms of the objective function."
         )
 
-    return _objective_to_ising(optimization_problem, optimization_problem.objective)
+    num_vars = problem.get_num_vars()
+    if not (num_vars == problem.get_num_binary_vars() or num_vars == problem.get_num_spin_vars()):
+        raise OptimizationError(
+            "The problem must contain either only binary variables or only spin variables. "
+            "You can use `OptimizationProblemToHubo` converter "
+            "to convert integer variables to binary variables. "
+            "Continuous variables are not supported."
+        )
+
+
+def to_isings(optimization_problem: BaseOptimizationProblem) -> list[tuple[SparsePauliOp, float]]:
+    """Return one Ising Hamiltonian per objective of this problem.
+
+    Variables are mapped to qubits in qiskit order, i.e.,
+    i-th variable is mapped to index n-i in the pauli string, where
+    n is the total number of variables.
+
+    Args:
+        optimization_problem: The problem to be translated.
+
+    Returns:
+        A list of tuples (qubit_op, offset), one per objective of the problem in objective
+        order. An :class:`~qiskit_addon_opt_mapper.OptimizationProblem` yields a list of one
+        tuple.
+
+    Raises:
+        OptimizationError: If variables are neither only binary nor only spin.
+        OptimizationError: If constraints exist in the problem.
+    """
+    _validate_problem_for_ising(optimization_problem)
+    return [
+        _objective_to_ising(optimization_problem, objective, validate=False)
+        for objective in optimization_problem.iter_objectives()
+    ]
 
 
 def _objective_to_ising(
-    problem: BaseOptimizationProblem, objective: OptimizationObjective
+    problem: BaseOptimizationProblem, objective: OptimizationObjective, validate: bool = True
 ) -> tuple[SparsePauliOp, float]:
-    """Return the Ising Hamiltonian of one objective of a problem.
-
-    The caller is responsible for checking that the problem has no constraints.
+    """Return the Ising Hamiltonian of a single objective of a problem.
 
     Args:
-        problem: The problem that provides the variables.
+        problem: The problem providing the variables and constraints.
         objective: The objective to be translated.
+        validate: Whether to validate the problem. Pass ``False`` only if the caller
+            has already called :func:`_validate_problem_for_ising` on ``problem``.
 
     Returns:
         A tuple (qubit_op, offset) comprising the qubit operator for the objective
         and offset for the constant value in the Ising Hamiltonian.
 
     Raises:
-        OptimizationError: If variables are neither only binary nor only spin.
+        OptimizationError: If ``validate`` is true and variables are neither only binary
+            nor only spin.
+        OptimizationError: If ``validate`` is true and constraints exist in the problem.
     """
+    if validate:
+        _validate_problem_for_ising(problem)
+
     num_vars = problem.get_num_vars()
 
     # set a sign corresponding to a maximized or minimized problem.

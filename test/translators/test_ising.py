@@ -13,11 +13,12 @@
 """Test to_ising"""
 
 import numpy as np
+import pytest
 from qiskit.quantum_info import SparsePauliOp
-from qiskit_addon_opt_mapper import OptimizationError, OptimizationProblem
+from qiskit_addon_opt_mapper import MultiObjectiveProblem, OptimizationError, OptimizationProblem
 from qiskit_addon_opt_mapper.converters import EqualityToPenalty
 from qiskit_addon_opt_mapper.problems import Constraint, ObjSense, OptimizationObjective
-from qiskit_addon_opt_mapper.translators import to_ising
+from qiskit_addon_opt_mapper.translators import to_ising, to_isings
 from qiskit_addon_opt_mapper.translators.ising import _objective_to_ising
 
 from ..optimization_test_case import OptimizationTestCase
@@ -252,3 +253,149 @@ class TestIsingTranslator(OptimizationTestCase):
         self.assertTrue(qubit_op.equiv(SparsePauliOp.from_list([("ZI", 1.0)])))
         self.assertEqual(offset, -2.0)
         self.assertEqual(to_ising(op), _objective_to_ising(op, op.objective))
+
+
+def _make_problem(sense: str = "minimize", name: str = "") -> OptimizationProblem:
+    problem = OptimizationProblem("p")
+    problem.binary_var("x")
+    problem.binary_var("y")
+    getattr(problem, sense)(constant=2, linear={"x": 1}, quadratic={("x", "y"): 1}, name=name)
+    return problem
+
+
+@pytest.mark.parametrize("sense", ["minimize", "maximize"])
+def test_to_ising_ignores_objective_name(sense):
+    """Naming the objective does not change the Hamiltonian or the offset."""
+    assert _make_problem(sense, "").to_ising() == _make_problem(sense, "f0").to_ising()
+
+
+@pytest.mark.parametrize("sense", ["minimize", "maximize"])
+def test_objective_to_ising_matches_to_ising(sense):
+    """``_objective_to_ising`` on the problem objective equals ``to_ising``."""
+    problem = _make_problem(sense, "f0")
+    assert _objective_to_ising(problem, problem.objective) == to_ising(problem)
+
+
+def test_objective_to_ising_uses_given_objective_sense():
+    """The sign of the Hamiltonian follows the sense of the objective that is passed in."""
+    minimized = _make_problem("minimize", "f0")
+    maximized = _make_problem("maximize", "f0")
+
+    min_op, min_offset = _objective_to_ising(minimized, minimized.objective)
+    max_op, max_offset = _objective_to_ising(minimized, maximized.objective)
+
+    assert max_op == -min_op
+    assert max_offset == -min_offset
+
+
+def test_objective_to_ising_rejects_constraints():
+    """The constraint check of ``to_ising`` is applied by ``_objective_to_ising``."""
+    problem = _make_problem()
+    problem.linear_constraint({"x": 1}, "==", 1)
+    with pytest.raises(OptimizationError):
+        _objective_to_ising(problem, problem.objective)
+
+
+def test_to_ising_spin_variables():
+    """``to_ising`` translates spin variables with constant, linear, quadratic, and higher-order terms."""
+    problem = OptimizationProblem("p")
+    problem.spin_var("s0")
+    problem.spin_var("s1")
+    problem.spin_var("s2")
+    problem.minimize(
+        constant=1.0,
+        linear={"s0": 2.0},
+        quadratic={("s0", "s1"): 3.0, ("s1", "s1"): 0.5},
+        higher_order={3: {("s0", "s1", "s2"): 4.0}},
+    )
+    op, offset = problem.to_ising()
+    assert isinstance(op, SparsePauliOp)
+    assert offset == 1.5
+
+
+@pytest.mark.parametrize("sense", ["minimize", "maximize"])
+def test_to_isings_single_objective_is_one_element_list(sense):
+    """``to_isings`` of an ``OptimizationProblem`` is a one-element list equal to ``to_ising``."""
+    problem = _make_problem(sense, "f0")
+    assert to_isings(problem) == [to_ising(problem)]
+
+
+def test_to_isings_multi_objective_order_and_sense():
+    """``to_isings`` returns one pair per objective, in objective order, with sense applied."""
+    problem = MultiObjectiveProblem("p")
+    problem.binary_var("x")
+    problem.binary_var("y")
+    problem.add_objective(constant=2, linear={"x": 1}, quadratic={("x", "y"): 1})
+    problem.add_objective(constant=2, linear={"x": 1}, quadratic={("x", "y"): 1}, sense="max")
+    (min_op, min_offset), (max_op, max_offset) = to_isings(problem)
+    assert max_op == -min_op
+    assert max_offset == -min_offset
+    assert (min_op, min_offset) == to_ising(_make_problem("minimize"))
+
+
+def test_to_isings_empty_multi_objective_problem():
+    """A problem without objectives gives an empty list."""
+    assert to_isings(MultiObjectiveProblem("p")) == []
+
+
+def test_to_isings_rejects_constraints_per_objective():
+    """The constraint guard is applied for every objective."""
+    problem = MultiObjectiveProblem("p")
+    problem.binary_var("x")
+    problem.add_objective(linear={"x": 1})
+    problem.linear_constraint({"x": 1}, "==", 1)
+    with pytest.raises(OptimizationError):
+        to_isings(problem)
+
+
+def test_to_isings_without_objectives_rejects_constraints():
+    """Zero-objective problems with constraints raise OptimizationError."""
+    problem = MultiObjectiveProblem("p")
+    problem.binary_var("x")
+    problem.linear_constraint({"x": 1}, "==", 1)
+    with pytest.raises(OptimizationError, match="There must be no constraint"):
+        to_isings(problem)
+
+
+def test_to_isings_rejects_higher_order_constraints():
+    """A higher-order constraint is rejected like a linear or quadratic one."""
+    problem = MultiObjectiveProblem("p")
+    for name in "xyz":
+        problem.binary_var(name)
+    problem.add_objective(linear={"x": 1})
+    problem.higher_order_constraint(higher_order={3: {(0, 1, 2): 1}}, sense="==", rhs=1)
+    with pytest.raises(OptimizationError, match="There must be no constraint"):
+        to_isings(problem)
+
+
+def test_to_ising_rejects_higher_order_constraints():
+    """``to_ising`` rejects higher-order constraints for a single-objective problem."""
+    problem = OptimizationProblem("p")
+    for name in "xyz":
+        problem.binary_var(name)
+    problem.minimize(linear={"x": 1})
+    problem.higher_order_constraint(higher_order={3: {(0, 1, 2): 1}}, sense="==", rhs=1)
+    with pytest.raises(OptimizationError, match="There must be no constraint"):
+        to_ising(problem)
+
+
+def test_to_isings_continuous_variable_message_does_not_suggest_qubo():
+    """The error says continuous variables are unsupported instead of pointing to the QUBO converter."""
+    problem = MultiObjectiveProblem("p")
+    problem.continuous_var(name="c")
+    with pytest.raises(OptimizationError, match="Continuous variables are not supported") as err:
+        to_isings(problem)
+    assert "OptimizationProblemToQubo" not in str(err.value)
+
+
+def test_to_isings_without_objectives_rejects_continuous_or_integer_variables():
+    """Zero-objective problems with continuous/integer variables raise OptimizationError."""
+    problem_cont = MultiObjectiveProblem("p")
+    problem_cont.continuous_var(name="c")
+    with pytest.raises(OptimizationError, match="must contain either only binary variables"):
+        to_isings(problem_cont)
+
+    problem_int = MultiObjectiveProblem("p")
+    problem_int.integer_var(name="i")
+    with pytest.raises(OptimizationError, match="must contain either only binary variables"):
+        to_isings(problem_int)
