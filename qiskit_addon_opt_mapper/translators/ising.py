@@ -232,7 +232,12 @@ def _quadratic_terms(
         diag = np.diag(quadratic) * sense
         diag_idx = np.nonzero(diag)[0]
         diag_coef = diag[diag_idx]
-        triu_r, triu_c = np.nonzero(np.triu(quadratic, 1))
+        # `quadratic` is already upper-triangle-folded (zero below the diagonal), so a
+        # plain np.nonzero plus an off-diagonal mask gets the same result as
+        # np.nonzero(np.triu(quadratic, 1)) without allocating a second (n, n) array.
+        rows, cols = np.nonzero(quadratic)
+        off_diag = rows < cols
+        triu_r, triu_c = rows[off_diag], cols[off_diag]
         quad_idx = np.column_stack((triu_r, triu_c))
         quad_coef = quadratic[triu_r, triu_c] * sense
     else:
