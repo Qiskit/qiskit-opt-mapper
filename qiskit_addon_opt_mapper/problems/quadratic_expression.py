@@ -82,56 +82,44 @@ class QuadraticExpression(OptimizationProblemElement):
     def __getitem__(self, key: tuple[str | int, str | int]) -> float:
         """Returns the coefficient where i, j can be a variable names or indices.
 
-        On a ``Representation.COO`` expression, every call converts the whole matrix
-        to CSR, making repeated element access O(nnz) per call. Prefer ``DOK``, ``CSR``,
-        or ``CSC`` for workloads that do many scalar reads.
-
         Args:
             key: The tuple of indices or names of the variables corresponding to the coefficient.
 
 
         Returns:
             The coefficient corresponding to the addressed variables.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
         """
         i, j = key
         if isinstance(i, str):
             i = self.optimization_problem.variables_index[i]
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
-        coefficients = self.coefficients
-        if isinstance(coefficients, coo_array):
-            coefficients = coefficients.tocsr()
-        return float(coefficients[min(i, j), max(i, j)])
+        return float(self.coefficients[min(i, j), max(i, j)])
 
     def __setitem__(self, key: tuple[str | int, str | int], value: float) -> None:
         """Sets the coefficient where i, j can be a variable names or indices.
 
-        On a ``Representation.COO`` expression, every call converts the whole matrix to DOK
-        and back. On ``Representation.CSR``/``Representation.CSC``, inserting a coefficient at
-        a previously-unset position raises scipy's ``SparseEfficiencyWarning``. Prefer ``DOK``
+        On ``Representation.CSR``/``Representation.CSC``, inserting a coefficient at a
+        previously-unset position raises scipy's ``SparseEfficiencyWarning``. Prefer ``DOK``
         for workloads that do many scalar writes.
 
         Args:
             key: The tuple of indices or names of the variables corresponding to the coefficient.
             value: The coefficient corresponding to the addressed variables.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
         """
         i, j = key
         if isinstance(i, str):
             i = self.optimization_problem.variables_index[i]
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
-        if isinstance(self._coefficients, coo_array):
-            warnings.warn(
-                "Setting a single coefficient on a COO-represented QuadraticExpression "
-                "converts the whole matrix to DOK and back, which is inefficient for "
-                "repeated assignment; construct the expression with Representation.DOK "
-                "instead if you need to set many individual coefficients.",
-                stacklevel=2,
-            )
-            dok = self._coefficients.todok()
-            dok[min(i, j), max(i, j)] = value
-            self._coefficients = coo_array(dok)
-            return
         self._coefficients[min(i, j), max(i, j)] = value
         if isinstance(self._coefficients, csr_array | csc_array):
             # Unlike DOK, CSR/CSC keep an explicit stored zero after this assignment;

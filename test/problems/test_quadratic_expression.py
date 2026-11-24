@@ -131,10 +131,7 @@ def test_accepts_list_of_lists_n_by_n_and_normalizes(representation):
     assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
     # Coefficients are stored in a upper-triangular manner
-    assert expr[0, 0] == 1.0
-    assert expr[0, 3] == 4.0
-    assert expr[2, 2] == 4.5
-    assert expr[1, 2] == 0
+    assert expr.to_dict() == {(0, 0): 1.0, (0, 3): 4.0, (1, 1): 3.0, (2, 2): 4.5, (3, 3): 5.0}
 
 
 @pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
@@ -144,9 +141,7 @@ def test_accepts_ndarray_n_by_n_and_normalizes(representation):
     expr = MAKE_INSTANCE(arr, nvars=n, representation=representation)
     assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
-    assert expr[0, 1] == 2
-    assert expr[1, 2] == 4
-    assert expr[2, 2] == 5
+    assert expr.to_dict() == {(0, 0): 1.0, (0, 1): 2.0, (1, 1): 3.0, (1, 2): 4.0, (2, 2): 5.0}
 
 
 @pytest.mark.parametrize("sparse_fmt", [dok_matrix, csr_matrix, csc_matrix])
@@ -161,7 +156,7 @@ def test_accepts_sparse_n_by_n_and_normalizes(sparse_fmt, representation):
     expr = MAKE_INSTANCE(sp, nvars=n, representation=representation)
     assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
     assert expr.coefficients.shape == (n, n)
-    assert expr[1, 1] == 2.0
+    assert expr.to_dict() == {(0, 0): 1.0, (1, 1): 2.0, (2, 2): 3.0}
 
 
 @pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
@@ -241,6 +236,11 @@ def test_accepts_dict_with_index_keys_and_sums_symmetric_entries(representation)
     n = 3
     coeffs = {(0, 1): 1.0, (1, 0): 2.0, (2, 2): 5.0}
     expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
+    assert expr.to_dict() == {(0, 1): 3.0, (2, 2): 5.0}
+    if representation is Representation.COO:
+        # Scalar access on COO is unsafe; whether it raises depends on the scipy
+        # version installed, so it is not asserted here. See `Representation`.
+        return
     assert expr[0, 1] == 3.0
     assert expr[2, 2] == 5.0
 
@@ -265,9 +265,10 @@ def test_accepts_dict_with_name_keys():
 # ---------------- getitem / setitem ----------------
 
 
-@pytest.mark.filterwarnings("ignore:Setting a single coefficient:UserWarning")
 @pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
-@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize(
+    "representation", [r for r in REPRESENTATION_TO_TYPE if r is not Representation.COO]
+)
 def test_getitem_setitem_with_indices(representation):
     expr = MAKE_INSTANCE({}, nvars=3, representation=representation)
     expr[0, 1] = 7.0
@@ -276,14 +277,6 @@ def test_getitem_setitem_with_indices(representation):
     assert expr[1, 0] == 7.0
 
 
-def test_setitem_on_coo_preserves_representation_and_warns():
-    expr = MAKE_INSTANCE({}, nvars=3, representation=Representation.COO)
-    with pytest.warns(UserWarning, match="inefficient"):
-        expr[0, 1] = 7.0
-    assert expr.representation == Representation.COO
-    assert isinstance(expr.coefficients, coo_array)
-    assert expr[0, 1] == 7.0
-    assert expr[1, 0] == 7.0
 
 
 @pytest.mark.parametrize("representation", [Representation.CSR, Representation.CSC])

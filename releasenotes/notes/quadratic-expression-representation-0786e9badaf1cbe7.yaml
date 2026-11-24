@@ -25,6 +25,14 @@ fixes:
     When more than 500 variables are used and no explicit ``representation`` is given, a
     warning now recommends passing one, since the ``DENSE`` default otherwise allocates
     ``n**2`` floats regardless of how sparse the coefficients actually are.
+  - |
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.__getitem__` and
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.__setitem__` no longer
+    silently convert a ``Representation.COO`` expression to ``CSR``/``DOK`` and back on
+    every call. Scalar element access on ``COO`` now behaves the same as on
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`: it is unsafe and may raise
+    ``TypeError`` depending on the installed scipy version; see the
+    :class:`~qiskit_addon_opt_mapper.problems.Representation` docstring.
 other:
   - |
     :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.evaluate_gradient`
