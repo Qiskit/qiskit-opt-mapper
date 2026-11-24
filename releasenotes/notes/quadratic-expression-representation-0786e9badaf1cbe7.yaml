@@ -1,0 +1,52 @@
+---
+features:
+  - |
+    :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` now accepts a
+    ``representation`` constructor argument, mirroring
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`, allowing the internal
+    storage format of a quadratic expression's coefficients to be chosen explicitly
+    (``DENSE``, ``COO``, ``DOK``, ``CSR``, or ``CSC``). The chosen representation is
+    fixed for the lifetime of the object and exposed via the new read-only
+    ``QuadraticExpression.representation`` property.
+upgrade:
+  - |
+    :attr:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.coefficients` now
+    returns a 2-D dense :class:`numpy.ndarray` by default instead of a
+    :class:`scipy.sparse.dok_array`, unless the coefficients have no nonzero entries, in
+    which case a sparse array is still returned. Code that calls sparse-only methods such
+    as ``.items()``, ``.tocoo()``, ``.todok()``, or ``.nnz`` on ``.coefficients`` should
+    either adapt to the dense array API or construct the expression with an explicit
+    ``representation`` to keep the previous behavior.
+fixes:
+  - |
+    An empty :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` (no nonzero
+    coefficients, e.g. a linear-only objective) no longer allocates a dense ``(n, n)``
+    array by default; it is stored sparsely regardless of the default representation.
+    When more than 500 variables are used and no explicit ``representation`` is given, a
+    warning now recommends passing one, since the ``DENSE`` default otherwise allocates
+    ``n**2`` floats regardless of how sparse the coefficients actually are.
+  - |
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.__getitem__` and
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.__setitem__` no longer
+    silently convert a ``Representation.COO`` expression to ``CSR``/``DOK`` and back on
+    every call. Scalar element access on ``COO`` now behaves the same as on
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`: it is unsafe and may raise
+    ``TypeError`` depending on the installed scipy version; see the
+    :class:`~qiskit_addon_opt_mapper.problems.Representation` docstring.
+other:
+  - |
+    :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.evaluate_gradient`
+    now computes ``Q @ x + x @ Q`` directly instead of first materializing the dense
+    ``(n, n)`` matrix ``Q + Q.T``, avoiding an O(n^2) allocation (roughly an order of
+    magnitude faster at ``n=1500`` in dense representation).
+  - |
+    Constructing a :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` with
+    a non-``DENSE`` ``representation`` from a dense :class:`numpy.ndarray` or an
+    existing sparse matrix now folds the coefficients into upper-triangular form
+    directly, instead of round-tripping through :class:`scipy.sparse.dok_array`
+    (roughly 3 orders of magnitude faster for a densely-populated 3000x3000 input).
+  - |
+    Constructing a :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` from a
+    list of lists now converts it via :func:`numpy.asarray` instead of building a Python
+    dict of all ``n**2`` entries, which is much faster for large, densely-populated
+    inputs.
