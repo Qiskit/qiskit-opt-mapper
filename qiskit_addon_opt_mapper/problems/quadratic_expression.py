@@ -46,7 +46,7 @@ class QuadraticExpression(OptimizationProblemElement):
             | list[list[float]]
             | dict[tuple[str | int, str | int], float]
         ),
-        representation: Representation = Representation.DENSE,
+        representation: Representation | None = None,
     ) -> None:
         """Creates a new quadratic expression.
 
@@ -59,11 +59,18 @@ class QuadraticExpression(OptimizationProblemElement):
         Args:
             optimization_problem: The parent OptimizationProblem.
             coefficients: The (sparse) representation of the coefficients.
-            representation: The internal storage representation. Fixed for the life of the object.
+            representation: The internal storage representation. Fixed for the life of the
+                object. If not given, defaults to ``Representation.DENSE``, except that
+                coefficients with no nonzero entries are always stored sparsely, so an empty
+                quadratic part never allocates an ``(n, n)`` array. Above 500 variables, relying
+                on this default also raises a warning recommending an explicit
+                ``representation``, since ``DENSE`` allocates ``n**2`` floats regardless of how
+                sparse the coefficients actually are.
 
         """
         super().__init__(optimization_problem)
-        self._representation = representation
+        self._requested_representation = representation
+        self._representation: Representation = representation or Representation.DENSE
         self._coefficients: ndarray | sparray
         self.coefficients = coefficients
 
@@ -168,7 +175,34 @@ class QuadraticExpression(OptimizationProblemElement):
         else:
             raise OptimizationError(f"Unsupported format for coefficients: {coefficients}")
 
+        if self._requested_representation is None:
+            self._representation = self._default_representation(folded, n)
+
         return self._to_representation(folded)
+
+    @staticmethod
+    def _default_representation(folded: ndarray | sparray, n: int) -> Representation:
+        """Chooses a representation when none was explicitly requested.
+
+        Defaults to ``DENSE``, except an empty quadratic part (no nonzero coefficients) is
+        always stored sparsely, since a dense array would allocate ``n**2`` floats for nothing.
+        Above 500 variables, defaulting to ``DENSE`` still allocates ``n**2`` floats regardless
+        of how sparse the coefficients are, so this warns and recommends an explicit choice.
+        """
+        nnz = int(np.count_nonzero(folded)) if isinstance(folded, ndarray) else folded.nnz
+        if nnz == 0:
+            return Representation.CSR
+        if n > 500:
+            warnings.warn(
+                f"QuadraticExpression defaulted to Representation.DENSE for {n} variables "
+                "without an explicit `representation`, which allocates a dense "
+                f"({n}, {n}) array regardless of how sparse the coefficients are. Consider "
+                "passing an explicit `representation` (e.g. CSR or DOK); as a rough starting "
+                "point, a sparse format tends to pay off once the number of nonzero quadratic "
+                "coefficients is well below roughly 20 * n.",
+                stacklevel=5,
+            )
+        return Representation.DENSE
 
     @staticmethod
     def _check_shape(coefficients: ndarray | sparray | spmatrix, n: int, kind: str) -> None:

@@ -12,11 +12,19 @@ upgrade:
   - |
     :attr:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.coefficients` now
     returns a 2-D dense :class:`numpy.ndarray` by default instead of a
-    :class:`scipy.sparse.dok_array`, since the default ``representation`` is now
-    ``DENSE``. Code that calls sparse-only methods such as ``.items()``, ``.tocoo()``,
-    ``.todok()``, or ``.nnz`` on ``.coefficients`` should either adapt to the dense
-    array API or construct the expression with ``representation=Representation.DOK``
-    to keep the previous behavior.
+    :class:`scipy.sparse.dok_array`, unless the coefficients have no nonzero entries, in
+    which case a sparse array is still returned. Code that calls sparse-only methods such
+    as ``.items()``, ``.tocoo()``, ``.todok()``, or ``.nnz`` on ``.coefficients`` should
+    either adapt to the dense array API or construct the expression with an explicit
+    ``representation`` to keep the previous behavior.
+fixes:
+  - |
+    An empty :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` (no nonzero
+    coefficients, e.g. a linear-only objective) no longer allocates a dense ``(n, n)``
+    array by default; it is stored sparsely regardless of the default representation.
+    When more than 500 variables are used and no explicit ``representation`` is given, a
+    warning now recommends passing one, since the ``DENSE`` default otherwise allocates
+    ``n**2`` floats regardless of how sparse the coefficients actually are.
 other:
   - |
     :meth:`~qiskit_addon_opt_mapper.problems.QuadraticExpression.evaluate_gradient`

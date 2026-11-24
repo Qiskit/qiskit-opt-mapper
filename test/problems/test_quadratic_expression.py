@@ -12,6 +12,8 @@
 
 """Tests for QuadraticExpression class."""
 
+import warnings
+
 import numpy as np
 import pytest
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
@@ -55,6 +57,55 @@ def test_representation_property(representation):
     dense = [[1.0, 2.0], [2.0, 5.0]]
     expr = MAKE_INSTANCE(dense, nvars=2, representation=representation)
     assert expr.representation is representation
+
+
+# ---------------- default representation selection ----------------
+def MAKE_DEFAULT_INSTANCE(coeffs, nvars=4):
+    """Helper to create a QuadraticExpression without specifying `representation`."""
+    op = OptimizationProblem()
+    op.binary_var_list(range(nvars))
+    return QuadraticExpression(optimization_problem=op, coefficients=coeffs)
+
+
+def test_default_representation_is_dense_when_nonempty_and_small():
+    expr = MAKE_DEFAULT_INSTANCE({(0, 1): 2.0}, nvars=4)
+    assert expr.representation is Representation.DENSE
+    assert isinstance(expr.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("nvars", [4, 600])
+def test_default_representation_is_sparse_when_empty_regardless_of_size(nvars):
+    expr = MAKE_DEFAULT_INSTANCE({}, nvars=nvars)
+    assert expr.representation is Representation.CSR
+    assert expr.coefficients.shape == (nvars, nvars)
+    assert expr.to_dict() == {}
+
+
+def test_default_representation_empty_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        MAKE_DEFAULT_INSTANCE({}, nvars=600)
+
+
+def test_default_representation_large_n_warns_and_stays_dense():
+    with pytest.warns(UserWarning, match="explicit `representation`"):
+        expr = MAKE_DEFAULT_INSTANCE({(0, 1): 2.0}, nvars=600)
+    assert expr.representation is Representation.DENSE
+
+
+def test_default_representation_small_n_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        MAKE_DEFAULT_INSTANCE({(0, 1): 2.0}, nvars=500)
+
+
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_explicit_representation_overrides_default_even_when_empty(representation):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        expr = MAKE_INSTANCE({}, nvars=600, representation=representation)
+    assert expr.representation is representation
+    assert isinstance(expr.coefficients, REPRESENTATION_TO_TYPE[representation])
 
 
 # ---------------- happy path ----------------
