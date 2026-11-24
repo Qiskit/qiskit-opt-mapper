@@ -37,6 +37,17 @@ from .variable import Variable, VarType
 
 logger = logging.getLogger(__name__)
 
+# Absolute tolerance used when checking feasibility, so that small numerical
+# roundoff errors (e.g. from a solver) are not reported as violations. A pure
+# relative tolerance is not enough here since bounds/right-hand-sides of zero
+# are common in optimization formulations, and `rel_tol * 0.0 == 0.0`.
+_FEASIBILITY_ABS_TOL = 1e-9
+
+
+def _isclose_with_abs_tol(a: float, b: float) -> bool:
+    """`math.isclose` with a non-zero default `abs_tol` for feasibility checks."""
+    return isclose(a, b, abs_tol=_FEASIBILITY_ABS_TOL)
+
 
 CoeffLike = ndarray | dict[tuple[int | str, ...], float] | list
 LinearCoeffLike: TypeAlias = ndarray | spmatrix | list[float] | dict[int | str, float]
@@ -1285,28 +1296,37 @@ class BaseOptimizationProblem(ABC):
         violated_variables = []
         for i, val in enumerate(x):
             variable = self.get_variable(i)
-            if val < variable.lowerbound or variable.upperbound < val:
+            if (
+                val < variable.lowerbound and not _isclose_with_abs_tol(val, variable.lowerbound)
+            ) or (
+                val > variable.upperbound and not _isclose_with_abs_tol(val, variable.upperbound)
+            ):
                 violated_variables.append(variable)
 
         # check whether the input satisfy the constraints of the problem
         violated_constraints = []
-        for constraint in cast(list[Constraint], self._linear_constraints) + cast(
-            list[Constraint], self._quadratic_constraints
-        ):
+        all_constraints = (
+            cast(list[Constraint], self._linear_constraints)
+            + cast(list[Constraint], self._quadratic_constraints)
+            + cast(list[Constraint], self._higher_order_constraints)
+        )
+        for constraint in all_constraints:
             lhs = constraint.evaluate(x)
             if (
-                (constraint.sense == ConstraintSense.LE and lhs > constraint.rhs)
-                or (constraint.sense == ConstraintSense.GE and lhs < constraint.rhs)
-                or (constraint.sense == ConstraintSense.EQ and not isclose(lhs, constraint.rhs))
-            ):
-                violated_constraints.append(constraint)
-
-        for constraint in cast(list[Constraint], self._higher_order_constraints):
-            lhs = constraint.evaluate(x)
-            if (
-                (constraint.sense == ConstraintSense.LE and lhs > constraint.rhs)
-                or (constraint.sense == ConstraintSense.GE and lhs < constraint.rhs)
-                or (constraint.sense == ConstraintSense.EQ and not isclose(lhs, constraint.rhs))
+                (
+                    constraint.sense == ConstraintSense.LE
+                    and lhs > constraint.rhs
+                    and not _isclose_with_abs_tol(lhs, constraint.rhs)
+                )
+                or (
+                    constraint.sense == ConstraintSense.GE
+                    and lhs < constraint.rhs
+                    and not _isclose_with_abs_tol(lhs, constraint.rhs)
+                )
+                or (
+                    constraint.sense == ConstraintSense.EQ
+                    and not _isclose_with_abs_tol(lhs, constraint.rhs)
+                )
             ):
                 violated_constraints.append(constraint)
 
