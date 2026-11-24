@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    :meth:`~qiskit_addon_opt_mapper.problems.OptimizationProblem.is_feasible` now accepts
+    a 2-D array of shape ``(n_samples, n_vars)`` and checks the feasibility of all
+    samples in a single batched computation, returning a 1-D boolean array of
+    ``n_samples`` values instead of requiring a Python loop over individual 1-D
+    inputs.

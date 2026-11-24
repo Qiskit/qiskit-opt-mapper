@@ -1339,20 +1339,54 @@ class BaseOptimizationProblem(ABC):
 
         return feasible, violated_variables, violated_constraints
 
-    def is_feasible(self, x: list[float] | np.ndarray) -> bool:
+    def is_feasible(self, x: list[float] | np.ndarray) -> bool | np.ndarray:
         """Returns whether a solution is feasible or not.
 
         Args:
-            x: a solution value, such as returned in an optimizer result.
+            x: a solution value, such as returned in an optimizer result. If ``x`` is
+                2-D of shape ``(n_samples, n_vars)``, feasibility is evaluated for each
+                row at once.
 
 
         Returns:
-            ``True`` if the solution provided is feasible otherwise ``False``.
+            ``True``/``False`` for 1-D input, or a 1-D boolean array of ``n_samples``
+            values for 2-D input.
+
+        Raises:
+            OptimizationError: If the input `x` is 2-D and its number of columns does
+                not match the number of problem variables.
 
         """
-        feasible, _, _ = self.get_feasibility_info(x)
+        x_arr = np.asarray(x, dtype=np.float64)
+        if x_arr.ndim != 2:
+            feasible, _, _ = self.get_feasibility_info(x)
+            return feasible
 
-        return feasible
+        n_vars = self.get_num_vars()
+        if x_arr.shape[1] != n_vars:
+            raise OptimizationError(
+                f"The size of solution `x`: {x_arr.shape[1]}, does not match the number "
+                f"of problem variables: {n_vars}"
+            )
+
+        lowerbounds = np.array([v.lowerbound for v in self.variables])
+        upperbounds = np.array([v.upperbound for v in self.variables])
+        feasible_mask: np.ndarray = np.all((x_arr >= lowerbounds) & (x_arr <= upperbounds), axis=1)
+
+        for constraint in (
+            cast(list[Constraint], self._linear_constraints)
+            + cast(list[Constraint], self._quadratic_constraints)
+            + cast(list[Constraint], self._higher_order_constraints)
+        ):
+            lhs = np.asarray(constraint.evaluate(x_arr))
+            if constraint.sense == ConstraintSense.LE:
+                feasible_mask &= lhs <= constraint.rhs
+            elif constraint.sense == ConstraintSense.GE:
+                feasible_mask &= lhs >= constraint.rhs
+            else:
+                feasible_mask &= np.isclose(lhs, constraint.rhs, rtol=1e-9, atol=0.0)
+
+        return feasible_mask
 
     @staticmethod
     def _check_name(name: str, name_type: str) -> None:
