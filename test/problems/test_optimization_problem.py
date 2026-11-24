@@ -1,4 +1,4 @@
-# This code is a Qiskit project.
+# (C) Copyright IBM 2025, 2026.
 #
 # (C) Copyright IBM 2025.
 #
@@ -1195,6 +1195,41 @@ class TestOptimizationProblem(OptimizationTestCase):
         self.assertEqual("c2", constraints[0].name)
         self.assertEqual("c3", constraints[1].name)
         self.assertEqual("c5", constraints[2].name)
+
+    def test_feasibility_batched(self):
+        """Tests is_feasible() with a 2-D batch of candidate solutions."""
+        q_p = OptimizationProblem("test")
+        _ = q_p.continuous_var(-1, 1, "x")
+        _ = q_p.continuous_var(-10, 10, "y")
+        q_p.minimize(linear={"x": 1, "y": 1})
+        q_p.linear_constraint({"x": 1, "y": 1}, "<=", 10, "c0")
+        q_p.linear_constraint({"x": 1, "y": 1}, ">=", -10, "c1")
+        q_p.linear_constraint({"x": 1, "y": 1}, "==", 5, "c2")
+        q_p.quadratic_constraint({"y": 1}, {("x", "x"): 1}, "<=", 10, "c3")
+        q_p.quadratic_constraint({"y": 1}, {("x", "x"): 1}, ">=", 5, "c4")
+        q_p.quadratic_constraint(None, {("x", "x"): 1, ("y", "y"): 1}, "==", 25, "c5")
+
+        x_batch = np.array([[0, 5], [1, 10], [1, -12], [1, 5], [5, 0], [1, 1], [0, 0]])
+        expected = np.array([True, False, False, False, False, False, False])
+        np.testing.assert_array_equal(q_p.is_feasible(x_batch), expected)
+
+        with self.assertRaises(OptimizationError):
+            q_p.is_feasible(np.zeros((2, 5)))
+
+    def test_feasibility_batched_with_higher_order_constraint(self):
+        """Tests is_feasible() on a batch when the problem has a higher-order constraint."""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var("x")
+        q_p.binary_var("y")
+        q_p.binary_var("z")
+        q_p.minimize(linear={"x": 1, "y": 1, "z": 1})
+        q_p.higher_order_constraint(
+            linear={}, quadratic={}, higher_order={3: {(0, 1, 2): 1.0}}, sense="<=", rhs=0
+        )
+
+        x_batch = np.array([[1, 1, 1], [1, 1, 0], [0, 0, 0]])
+        expected = np.array([False, True, True])
+        np.testing.assert_array_equal(q_p.is_feasible(x_batch), expected)
 
     def test_empty_name(self):
         """Test empty names"""
