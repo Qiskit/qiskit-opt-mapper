@@ -1,0 +1,10 @@
+---
+issues:
+  - |
+    Scalar element access on a :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`
+    with ``representation=Representation.COO`` (``expr[i]`` and ``expr[i] = v``) is unsafe:
+    scipy's ``coo_array`` does not support indexing on all supported scipy versions and may
+    raise ``TypeError``. Use :meth:`~qiskit_addon_opt_mapper.problems.LinearExpression.to_dict`
+    or :meth:`~qiskit_addon_opt_mapper.problems.LinearExpression.to_array` to read
+    coefficients instead, or choose a different representation if per-element access is
+    needed.

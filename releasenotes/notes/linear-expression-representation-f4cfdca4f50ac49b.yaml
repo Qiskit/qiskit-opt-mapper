@@ -1,0 +1,22 @@
+---
+features:
+  - |
+    Added a :class:`~qiskit_addon_opt_mapper.problems.Representation` enum and a
+    ``representation`` constructor argument to
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`, allowing the internal
+    storage format of a linear expression's coefficients to be chosen explicitly
+    (``DENSE``, ``COO``, ``DOK``, or ``CSR``). The chosen representation is exposed
+    via the new read-only ``LinearExpression.representation`` property and is fixed
+    for the lifetime of the object.
+upgrade:
+  - |
+    :attr:`~qiskit_addon_opt_mapper.problems.LinearExpression.coefficients` is now a
+    1-D array or sparse array of shape ``(n,)``, defaulting to a dense
+    :class:`numpy.ndarray`. It was previously always a ``(1, n)`` ``dok_array``. Code that
+    relied on the old 2-D shape, e.g. indexing with ``coefficients[0, i]``, or calling
+    ``.tocoo()``/``.items()``/``.toarray()[0]`` on the assumption of a sparse 2-D matrix,
+    must be updated to the 1-D equivalents (``coefficients[i]``, ``.toarray()``, or
+    :meth:`~qiskit_addon_opt_mapper.problems.LinearExpression.to_dict`). Constructing a
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression` still accepts ``(1, n)``
+    and ``(n, 1)`` sparse row/column vectors as input for backward compatibility; they are
+    flattened to 1-D on construction.
