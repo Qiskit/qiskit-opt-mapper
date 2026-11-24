@@ -277,8 +277,6 @@ def test_getitem_setitem_with_indices(representation):
     assert expr[1, 0] == 7.0
 
 
-
-
 @pytest.mark.parametrize("representation", [Representation.CSR, Representation.CSC])
 def test_setitem_zero_drops_explicit_entry_on_csr_csc(representation):
     expr = MAKE_INSTANCE({(0, 1): 5.0}, nvars=3, representation=representation)
