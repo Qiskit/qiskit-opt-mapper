@@ -151,7 +151,7 @@ class QuadraticExpression(OptimizationProblemElement):
         n = self.optimization_problem.get_num_vars()
 
         if isinstance(coefficients, list):
-            folded = self._fold_sparse(self._list_to_coo(coefficients, n))
+            folded = self._fold_dense(self._list_to_dense(coefficients, n))
         elif isinstance(coefficients, ndarray):
             self._check_shape(coefficients, n, "numpy array")
             folded = self._fold_dense(coefficients)
@@ -202,23 +202,21 @@ class QuadraticExpression(OptimizationProblemElement):
             )
 
     @staticmethod
-    def _list_to_coo(coefficients: list[list[float]], n: int) -> coo_array:
-        """Validates and converts a list of lists into a ``coo_array``."""
-        if len(coefficients) != n:
+    def _list_to_dense(coefficients: list[list[float]], n: int) -> ndarray:
+        """Validates and converts a list of lists into a dense ``(n, n)`` array.
+
+        Converts via ``np.asarray`` rather than building a Python dict of all ``n**2``
+        entries, which is much faster for large, densely-populated inputs.
+        """
+        try:
+            arr = np.asarray(coefficients, dtype=np.float64)
+        except ValueError as ex:
             raise OptimizationError(
                 f"The coefficient list for the quadratic expression must be a list of {n} "
                 f"lists, each of length {n}, matching the number of variables."
-            )
-        coeffs: dict[tuple[int, int], float] = {}
-        for i, row in enumerate(coefficients):
-            if len(row) != n:
-                raise OptimizationError(
-                    f"Each inner list for the quadratic expression must be of length {n}"
-                    f"matching the number of variables."
-                )
-            for j, value in enumerate(row):
-                coeffs[i, j] = value
-        return QuadraticExpression._coeffs_dict_to_coo(coeffs, n)
+            ) from ex
+        QuadraticExpression._check_shape(arr, n, "list")
+        return arr
 
     def _dict_to_coo(
         self, coefficients: dict[tuple[str | int, str | int], float], n: int
