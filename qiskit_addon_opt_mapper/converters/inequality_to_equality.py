@@ -122,7 +122,7 @@ class InequalityToEquality(OptimizationProblemConverter):
             if lin_const.sense == Constraint.Sense.EQ:
                 new_linear_constraints.append(
                     (
-                        lin_const.linear.coefficients,
+                        lin_const.linear.to_dict(use_name=True),
                         lin_const.sense,
                         lin_const.rhs,
                         lin_const.name,
@@ -142,8 +142,8 @@ class InequalityToEquality(OptimizationProblemConverter):
             if quad_const.sense == Constraint.Sense.EQ:
                 new_quadratic_constraints.append(
                     (
-                        quad_const.linear.coefficients,
-                        quad_const.quadratic.coefficients,
+                        quad_const.linear.to_dict(use_name=True),
+                        quad_const.quadratic.to_dict(use_name=True),
                         quad_const.sense,
                         quad_const.rhs,
                         quad_const.name,
@@ -165,9 +165,12 @@ class InequalityToEquality(OptimizationProblemConverter):
             if ho_const.sense == Constraint.Sense.EQ:
                 new_higher_order_constraints.append(
                     (
-                        ho_const.linear.coefficients,
-                        ho_const.quadratic.coefficients,
-                        {degree: ho.to_dict() for degree, ho in ho_const.higher_order.items()},
+                        ho_const.linear.to_dict(use_name=True),
+                        ho_const.quadratic.to_dict(use_name=True),
+                        {
+                            degree: ho.to_dict(use_name=True)
+                            for degree, ho in ho_const.higher_order.items()
+                        },
                         ho_const.sense,
                         ho_const.rhs,
                         ho_const.name,
