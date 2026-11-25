@@ -163,6 +163,16 @@ class EqualityToPenalty(OptimizationProblemConverter):
                         tgt[names] = tgt.get(names, 0.0) + obj_sense * scale * c
             return float(obj_sense * scale * const)
 
+        constraint_polys: list[tuple[float, Poly]] = []
+        for con in all_constraints:
+            f: Poly = {}
+            _poly_add(f, _poly_from_constraint_linear(con))
+            if getattr(con, "quadratic", None):
+                _poly_add(f, _poly_from_constraint_quadratic(con))
+            if getattr(con, "higher_order", None):
+                _poly_add(f, _poly_from_constraint_higher(con))
+            constraint_polys.append((float(con.rhs), f))
+
         for obj in problem.iter_objectives():
             offset = obj.constant
             linear = obj.linear.to_dict(use_name=True)
@@ -170,15 +180,7 @@ class EqualityToPenalty(OptimizationProblemConverter):
             ho = {d: expr.to_dict(use_name=True) for d, expr in obj.higher_order.items()}
             sense = 1 if obj.sense == OptimizationObjective.Sense.MINIMIZE else -1
 
-            for con in all_constraints:
-                c = float(con.rhs)
-                f: Poly = {}
-                _poly_add(f, _poly_from_constraint_linear(con))
-                if getattr(con, "quadratic", None):
-                    _poly_add(f, _poly_from_constraint_quadratic(con))
-                if getattr(con, "higher_order", None):
-                    _poly_add(f, _poly_from_constraint_higher(con))
-
+            for c, f in constraint_polys:
                 offset += sense * penalty * (c * c)
                 offset += _add_poly_to_objective(
                     f, -2.0 * penalty * c, sense, linear, quadratic, ho
