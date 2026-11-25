@@ -30,6 +30,7 @@ from ..infinity import INFINITY
 from .constraint import Constraint, ConstraintSense
 from .higher_order_constraint import HigherOrderConstraint
 from .linear_constraint import LinearConstraint
+from .linear_expression import Representation
 from .optimization_objective import ObjSense, OptimizationObjective
 from .optimization_problem_element import OptimizationProblemElement
 from .quadratic_constraint import QuadraticConstraint
@@ -204,6 +205,8 @@ class BaseOptimizationProblem(ABC):
         quadratic: QuadraticCoeffLike | None = None,
         higher_order: HigherOrderCoeffLike | None = None,
         name: str = "",
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Adds or sets an objective from its already-assembled parts.
 
@@ -220,6 +223,8 @@ class BaseOptimizationProblem(ABC):
             quadratic: The coefficients of the quadratic part.
             higher_order: A dictionary of ``{order: coeffs}`` for the higher-order part.
             name: The name of the objective. The default empty string leaves it unnamed.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
 
     def _new_empty(self: _T) -> _T:
@@ -860,12 +865,13 @@ class BaseOptimizationProblem(ABC):
         """
         return self._linear_constraints_index
 
-    def linear_constraint(
+    def linear_constraint(  # pylint: disable=too-many-positional-arguments
         self,
         linear: ndarray | spmatrix | list[float] | dict[int | str, float] = None,
         sense: str | ConstraintSense = "<=",
         rhs: float = 0.0,
         name: str | None = None,
+        representation: Representation = Representation.DENSE,
     ) -> LinearConstraint:
         """Adds a linear equality constraint to the optimization problem.
 
@@ -883,6 +889,7 @@ class BaseOptimizationProblem(ABC):
             rhs: The right-hand side of the constraint.
             name: The name of the constraint.
                 If it's ``None`` or empty ``""``, the default name, e.g., ``c0``, is used.
+            representation: The internal storage representation of ``linear``.
 
 
         Returns:
@@ -904,7 +911,9 @@ class BaseOptimizationProblem(ABC):
         self.linear_constraints_index[name] = len(self.linear_constraints)
         if linear is None:
             linear = {}
-        constraint = LinearConstraint(self, name, linear, Constraint.Sense.convert(sense), rhs)
+        constraint = LinearConstraint(
+            self, name, linear, Constraint.Sense.convert(sense), rhs, representation=representation
+        )
         self.linear_constraints.append(constraint)
         return constraint
 
@@ -961,6 +970,8 @@ class BaseOptimizationProblem(ABC):
         sense: str | ConstraintSense = "<=",
         rhs: float = 0.0,
         name: str | None = None,
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> QuadraticConstraint:
         """Adds a quadratic equality constraint to the optimization problem.
 
@@ -979,6 +990,8 @@ class BaseOptimizationProblem(ABC):
             rhs: The right-hand side of the constraint.
             name: The name of the constraint.
                 If it's ``None`` or empty ``""``, the default name, e.g., ``q0``, is used.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
 
 
         Returns:
@@ -1002,7 +1015,14 @@ class BaseOptimizationProblem(ABC):
         if quadratic is None:
             quadratic = {}
         constraint = QuadraticConstraint(
-            self, name, linear, quadratic, Constraint.Sense.convert(sense), rhs
+            self,
+            name,
+            linear,
+            quadratic,
+            Constraint.Sense.convert(sense),
+            rhs,
+            linear_representation=linear_representation,
+            quadratic_representation=quadratic_representation,
         )
         self.quadratic_constraints.append(constraint)
         return constraint
@@ -1053,6 +1073,8 @@ class BaseOptimizationProblem(ABC):
         sense: str | ConstraintSense = "<=",
         rhs: float = 0.0,
         name: str | None = None,
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> HigherOrderConstraint:
         r"""Adds a higher-order constraint.
 
@@ -1070,6 +1092,8 @@ class BaseOptimizationProblem(ABC):
             rhs: The right-hand-side value of the constraint.
             name: The name of the constraint.
                 If it's ``None`` or empty ``""``, the default name, e.g., ``h0``, is used.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         # Handle constraint name
         if name:
@@ -1089,16 +1113,17 @@ class BaseOptimizationProblem(ABC):
             quadratic = {}
 
         # Build the constraint
-        if higher_order is not None:
-            con = HigherOrderConstraint(
-                self,
-                name=name,
-                linear=linear,
-                quadratic=quadratic,
-                higher_order=higher_order,
-                sense=Constraint.Sense.convert(sense),
-                rhs=rhs,
-            )
+        con = HigherOrderConstraint(
+            self,
+            name=name,
+            linear=linear,
+            quadratic=quadratic,
+            higher_order=higher_order,
+            sense=Constraint.Sense.convert(sense),
+            rhs=rhs,
+            linear_representation=linear_representation,
+            quadratic_representation=quadratic_representation,
+        )
 
         # Register the constraint
         self.higher_order_constraints_index[name] = len(self.higher_order_constraints)

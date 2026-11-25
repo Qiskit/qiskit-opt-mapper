@@ -12,9 +12,10 @@
 
 """Test from_docplex_mp and to_docplex_mp"""
 
+import pytest
 from docplex.mp.model import Model
 from qiskit_addon_opt_mapper.exceptions import OptimizationError
-from qiskit_addon_opt_mapper.problems import Constraint, OptimizationProblem
+from qiskit_addon_opt_mapper.problems import Constraint, OptimizationProblem, Representation
 from qiskit_addon_opt_mapper.translators.docplex_mp import (
     from_docplex_mp,
     to_docplex_mp,
@@ -801,3 +802,60 @@ class TestDocplexMpTranslator(OptimizationTestCase):
             q_p.quadratic_constraint(sense="==", rhs=0.0)
             mod = to_docplex_mp(q_p)
             self.assertEqual(mod.number_of_constraints, 0)
+
+    def test_to_docplex_mp_dense_default_round_trip_empty_terms(self):
+        """to_docplex_mp() handles a problem whose linear/quadratic terms are all-zero and
+        stored with the DENSE-by-default representation (no AttributeError on .nnz). The
+        all-zero, rhs == 0 constraints are intentionally dropped by to_docplex_mp (see
+        test_trivial_constraints_to_docplex_mp), so they do not survive the round trip."""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var(name="x")
+        q_p.binary_var(name="y")
+        q_p.minimize(linear={}, quadratic={})
+        q_p.linear_constraint(linear={}, sense="<=", rhs=0.0)
+        q_p.quadratic_constraint(linear={}, quadratic={}, sense="<=", rhs=0.0)
+
+        q_p2 = from_docplex_mp(to_docplex_mp(q_p))
+        self.assertEqual([v.name for v in q_p2.variables], [v.name for v in q_p.variables])
+        self.assertEqual(q_p2.objective.constant, q_p.objective.constant)
+        self.assertEqual(len(q_p2.linear_constraints), 0)
+        self.assertEqual(len(q_p2.quadratic_constraints), 0)
+
+    def test_to_docplex_mp_dense_default_round_trip_nonempty_terms(self):
+        """to_docplex_mp() round-trips a problem with non-zero linear/quadratic terms stored with
+        the DENSE-by-default representation."""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var(name="x")
+        q_p.integer_var(name="y", lowerbound=-2, upperbound=4)
+        q_p.minimize(linear={"x": 1, "y": 2}, quadratic={("x", "y"): -1})
+        q_p.linear_constraint(linear={"x": 2, "y": -1}, sense="==", rhs=1.0)
+        q_p.quadratic_constraint(linear={"x": 2}, quadratic={("x", "y"): 3}, sense="<=", rhs=1.0)
+
+        q_p2 = from_docplex_mp(to_docplex_mp(q_p))
+        self.assertEqual(
+            to_docplex_mp(q_p).export_as_lp_string(),
+            to_docplex_mp(q_p2).export_as_lp_string(),
+        )
+
+
+@pytest.mark.parametrize(
+    "representation", [Representation.COO, Representation.DOK, Representation.CSR]
+)
+def test_to_docplex_mp_trivial_constraints_sparse_fast_path(representation):
+    """The .nnz fast path for trivial (all-zero, rhs=0) constraints still fires when the
+    constraint's coefficients are stored with a sparse representation."""
+    q_p = OptimizationProblem()
+    q_p.binary_var(name="x")
+    q_p.linear_constraint(linear={}, sense="==", rhs=0.0, representation=representation)
+    q_p.quadratic_constraint(
+        linear={},
+        quadratic={},
+        sense="==",
+        rhs=0.0,
+        linear_representation=representation,
+        quadratic_representation=representation,
+    )
+
+    mod = to_docplex_mp(q_p)
+    # Both constraints are trivial (rhs == 0 and all coefficients zero) so they are skipped.
+    assert mod.number_of_constraints == 0
