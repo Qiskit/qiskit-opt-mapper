@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    ``to_ising`` no longer allocates a second dense ``(n, n)`` array when extracting the
+    off-diagonal quadratic terms of a ``DENSE``-represented objective. Since
+    :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression` already stores
+    coefficients upper-triangle-folded, finding the nonzero entries directly and masking
+    out the diagonal gives the same result as the previous ``np.triu`` copy, without the
+    extra allocation.

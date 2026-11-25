@@ -12,17 +12,25 @@
 
 """Quadratic expression interface."""
 
+import warnings
 from collections import defaultdict
 from typing import Any, cast
 
 import numpy as np
 from numpy import ndarray
-from scipy.sparse import coo_array, dok_array, issparse, sparray, spmatrix, tril, triu
+from scipy.sparse import coo_array, csc_array, csr_array, dok_array, sparray, spmatrix, tril, triu
 
 from ..exceptions import OptimizationError
 from ..infinity import INFINITY
-from .linear_expression import ExpressionBounds
+from .linear_expression import ExpressionBounds, Representation
 from .optimization_problem_element import OptimizationProblemElement
+
+_SPARSE_2D_CONSTRUCTORS: dict[Representation, type[sparray]] = {
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+    Representation.CSC: csc_array,
+}
 
 
 class QuadraticExpression(OptimizationProblemElement):
@@ -38,21 +46,38 @@ class QuadraticExpression(OptimizationProblemElement):
             | list[list[float]]
             | dict[tuple[str | int, str | int], float]
         ),
+        representation: Representation | None = None,
     ) -> None:
         """Creates a new quadratic expression.
 
         The quadratic expression can be defined via an array, a list, a sparse matrix, or a
-        dictionary that uses variable names or indices as keys and stores the values internally as a
-        dok_array. We stores values in a compressed way, i.e., values at symmetric positions are
-        summed up in the upper triangle. For example, {(0, 1): 1, (1, 0): 2} -> {(0, 1): 3}.
+        dictionary that uses variable names or indices as keys and stores the values internally
+        according to ``representation``. Values are stored in a compressed way, i.e., values at
+        symmetric positions are summed up in the upper triangle. For example,
+        {(0, 1): 1, (1, 0): 2} -> {(0, 1): 3}.
 
         Args:
             optimization_problem: The parent OptimizationProblem.
             coefficients: The (sparse) representation of the coefficients.
+            representation: The internal storage representation. Fixed for the life of the
+                object. If not given, defaults to ``Representation.DENSE``, except that
+                coefficients with no nonzero entries are always stored sparsely, so an empty
+                quadratic part never allocates an ``(n, n)`` array. Above 500 variables, relying
+                on this default also raises a warning recommending an explicit
+                ``representation``, since ``DENSE`` allocates ``n**2`` floats regardless of how
+                sparse the coefficients actually are.
 
         """
         super().__init__(optimization_problem)
+        self._requested_representation = representation
+        self._representation: Representation = representation or Representation.DENSE
+        self._coefficients: ndarray | sparray
         self.coefficients = coefficients
+
+    @property
+    def representation(self) -> Representation:
+        """Returns the internal storage representation of the quadratic expression."""
+        return self._representation
 
     def __getitem__(self, key: tuple[str | int, str | int]) -> float:
         """Returns the coefficient where i, j can be a variable names or indices.
@@ -63,6 +88,10 @@ class QuadraticExpression(OptimizationProblemElement):
 
         Returns:
             The coefficient corresponding to the addressed variables.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
         """
         i, j = key
         if isinstance(i, str):
@@ -74,18 +103,30 @@ class QuadraticExpression(OptimizationProblemElement):
     def __setitem__(self, key: tuple[str | int, str | int], value: float) -> None:
         """Sets the coefficient where i, j can be a variable names or indices.
 
+        On ``Representation.CSR``/``Representation.CSC``, inserting a coefficient at a
+        previously-unset position raises scipy's ``SparseEfficiencyWarning``. Prefer ``DOK``
+        for workloads that do many scalar writes.
+
         Args:
             key: The tuple of indices or names of the variables corresponding to the coefficient.
             value: The coefficient corresponding to the addressed variables.
+
+        Raises:
+            TypeError: if ``representation`` is ``Representation.COO``; see
+                :class:`Representation`.
         """
         i, j = key
         if isinstance(i, str):
             i = self.optimization_problem.variables_index[i]
         if isinstance(j, str):
             j = self.optimization_problem.variables_index[j]
-        self.coefficients[min(i, j), max(i, j)] = value
+        self._coefficients[min(i, j), max(i, j)] = value
+        if isinstance(self._coefficients, csr_array | csc_array):
+            # Unlike DOK, CSR/CSC keep an explicit stored zero after this assignment;
+            # drop it so to_dict()/nnz/etc. agree with the other representations.
+            self._coefficients.eliminate_zeros()
 
-    def _coeffs_to_dok_array(
+    def _coeffs_to_representation(
         self,
         coefficients: (
             ndarray
@@ -94,83 +135,150 @@ class QuadraticExpression(OptimizationProblemElement):
             | list[list[float]]
             | dict[tuple[str | int, str | int], float]
         ),
-    ) -> dok_array:
-        """Maps given coefficients to a dok_array.
+    ) -> ndarray | sparray:
+        """Maps given coefficients to this expression's storage representation.
 
         Args:
             coefficients: The coefficients to be mapped.
 
 
         Returns:
-            The given coefficients as a dok_array
+            The given coefficients cast to this expression's representation.
 
         Raises:
             OptimizationError: if coefficients are given in unsupported format.
         """
-
-        def _dict_to_dok(n: int, coeffs: dict[tuple[int, int], float]) -> dok_array:
-            if coeffs:
-                rows, cols, values = zip(*((i, j, v) for (i, j), v in coeffs.items()), strict=True)
-                ret = dok_array(coo_array((values, (rows, cols)), shape=(n, n)).todok())
-            else:
-                ret = dok_array((n, n))
-            return ret
+        n = self.optimization_problem.get_num_vars()
 
         if isinstance(coefficients, list):
-            n = self.optimization_problem.get_num_vars()
-            coeffs = defaultdict(float)
-            if len(coefficients) != n:
-                raise OptimizationError(
-                    f"The coefficient list for the quadratic expression must be a list of {n} "
-                    f"lists, each of length {n}, matching the number of variables."
-                )
-            for i, row in enumerate(coefficients):
-                if len(row) != n:
-                    raise OptimizationError(
-                        f"Each inner list for the quadratic expression must be of length {n}"
-                        f"matching the number of variables."
-                    )
-                for j, value in enumerate(row):
-                    coeffs[i, j] = value
-            coefficients = _dict_to_dok(n, coeffs)
+            folded = self._fold_dense(self._list_to_dense(coefficients, n))
         elif isinstance(coefficients, ndarray):
-            n = self.optimization_problem.get_num_vars()
-            if coefficients.ndim != 2 or coefficients.shape != (n, n):
-                raise OptimizationError(
-                    f"The coefficient numpy array for the quadratic expression must be a (n, n) "
-                    f"matrix with shape ({n}, {n}) matching the number of variables."
-                )
-            coefficients = dok_array(coefficients)
-        elif issparse(coefficients):
-            coefficients = dok_array(coefficients)
+            self._check_shape(coefficients, n, "numpy array")
+            folded = self._fold_dense(coefficients)
+        elif isinstance(coefficients, sparray | spmatrix):
+            self._check_shape(coefficients, n, "sparse matrix")
+            folded = self._fold_sparse(coefficients)
         elif isinstance(coefficients, dict):
-            n = self.optimization_problem.get_num_vars()
-            coeffs = defaultdict(float)
-            for (i, j), value in coefficients.items():  # type: ignore
-                i_idx = self.optimization_problem.variables_index[i] if isinstance(i, str) else i
-                j_idx = self.optimization_problem.variables_index[j] if isinstance(j, str) else j
-                if i_idx > j_idx:
-                    i_idx, j_idx = i_idx, j_idx
-                coeffs[i_idx, j_idx] += value
-            coefficients = _dict_to_dok(n, coeffs)
+            folded = self._fold_sparse(self._dict_to_coo(coefficients, n))
         else:
             raise OptimizationError(f"Unsupported format for coefficients: {coefficients}")
-        return self._triangle_matrix(coefficients)
+
+        if self._requested_representation is None:
+            self._representation = self._default_representation(folded, n)
+
+        return self._to_representation(folded)
 
     @staticmethod
-    def _triangle_matrix(mat: dok_array) -> dok_array:
-        lower = tril(mat, -1, format="dok")
-        # `todok` is necessary because subtraction results in other format
-        return (mat + lower.transpose() - lower).todok()
+    def _default_representation(folded: ndarray | sparray, n: int) -> Representation:
+        """Chooses a representation when none was explicitly requested.
+
+        Defaults to ``DENSE``, except an empty quadratic part (no nonzero coefficients) is
+        always stored sparsely, since a dense array would allocate ``n**2`` floats for nothing.
+        Above 500 variables, defaulting to ``DENSE`` still allocates ``n**2`` floats regardless
+        of how sparse the coefficients are, so this warns and recommends an explicit choice.
+        """
+        nnz = int(np.count_nonzero(folded)) if isinstance(folded, ndarray) else folded.nnz
+        if nnz == 0:
+            return Representation.CSR
+        if n > 500:
+            warnings.warn(
+                f"QuadraticExpression defaulted to Representation.DENSE for {n} variables "
+                "without an explicit `representation`, which allocates a dense "
+                f"({n}, {n}) array regardless of how sparse the coefficients are. Consider "
+                "passing an explicit `representation` (e.g. CSR or DOK); as a rough starting "
+                "point, a sparse format tends to pay off once the number of nonzero quadratic "
+                "coefficients is well below roughly 20 * n.",
+                stacklevel=5,
+            )
+        return Representation.DENSE
 
     @staticmethod
-    def _symmetric_matrix(mat: dok_array) -> dok_array:
+    def _check_shape(coefficients: ndarray | sparray | spmatrix, n: int, kind: str) -> None:
+        """Raises ``OptimizationError`` unless ``coefficients`` is a 2-D (n, n) matrix."""
+        if coefficients.ndim != 2 or coefficients.shape != (n, n):
+            raise OptimizationError(
+                f"The coefficient {kind} for the quadratic expression must be a (n, n) "
+                f"matrix with shape ({n}, {n}) matching the number of variables."
+            )
+
+    @staticmethod
+    def _list_to_dense(coefficients: list[list[float]], n: int) -> ndarray:
+        """Validates and converts a list of lists into a dense ``(n, n)`` array.
+
+        Converts via ``np.asarray`` rather than building a Python dict of all ``n**2``
+        entries, which is much faster for large, densely-populated inputs.
+        """
+        try:
+            arr = np.asarray(coefficients, dtype=np.float64)
+        except ValueError as ex:
+            raise OptimizationError(
+                f"The coefficient list for the quadratic expression must be a list of {n} "
+                f"lists, each of length {n}, matching the number of variables."
+            ) from ex
+        QuadraticExpression._check_shape(arr, n, "list")
+        return arr
+
+    def _dict_to_coo(
+        self, coefficients: dict[tuple[str | int, str | int], float], n: int
+    ) -> coo_array:
+        """Resolves variable names/indices and converts a coefficient dict into a ``coo_array``.
+
+        Entries at symmetric (i, j)/(j, i) positions are summed into the upper triangle.
+        """
+        coeffs: dict[tuple[int, int], float] = defaultdict(float)
+        for (i, j), value in coefficients.items():
+            i_idx = self.optimization_problem.variables_index[i] if isinstance(i, str) else i
+            j_idx = self.optimization_problem.variables_index[j] if isinstance(j, str) else j
+            if i_idx > j_idx:
+                i_idx, j_idx = j_idx, i_idx
+            coeffs[i_idx, j_idx] += value
+        return self._coeffs_dict_to_coo(coeffs, n)
+
+    @staticmethod
+    def _coeffs_dict_to_coo(coeffs: dict[tuple[int, int], float], n: int) -> coo_array:
+        """Converts an int-indexed coefficient dict into a ``coo_array``."""
+        if not coeffs:
+            return coo_array((n, n))
+        rows, cols, values = zip(*((i, j, v) for (i, j), v in coeffs.items()), strict=True)
+        return coo_array((values, (rows, cols)), shape=(n, n))
+
+    @staticmethod
+    def _fold_dense(mat: ndarray) -> ndarray:
+        """Folds a dense (n, n) array into upper-triangle-compressed form."""
+        folded = np.triu(mat) + np.tril(mat, -1).T
+        return np.ascontiguousarray(folded, dtype=np.float64)
+
+    @staticmethod
+    def _fold_sparse(mat: sparray | spmatrix) -> sparray:
+        """Folds a sparse (n, n) matrix into upper-triangle-compressed form.
+
+        Works directly on COO, avoiding a DOK round-trip for formats (e.g. CSR/CSC, or a
+        dense array converted upstream) where that round-trip would dominate the cost.
+        """
+        coo = coo_array(mat, dtype=np.float64)
+        lower = tril(coo, -1, format="coo")
+        return cast(sparray, triu(coo, format="coo") + lower.transpose())
+
+    def _to_representation(self, folded: ndarray | sparray) -> ndarray | sparray:
+        """Casts an already upper-triangle-folded matrix to this expression's representation."""
+        if self._representation == Representation.DENSE:
+            if isinstance(folded, ndarray):
+                return folded
+            return np.ascontiguousarray(folded.toarray(), dtype=np.float64)
+        return _SPARSE_2D_CONSTRUCTORS[self._representation](folded)
+
+    @staticmethod
+    def _symmetric_matrix(mat: ndarray | sparray) -> ndarray | sparray:
+        """Returns the upper-triangle-compressed ``mat`` expanded into symmetric form."""
+        if isinstance(mat, ndarray):
+            upper = np.triu(mat, 1) / 2
+            return mat + upper.T - upper
         upper = triu(mat, 1, format="dok") / 2
-        # `todok` is necessary because subtraction results in other format
-        return (mat + upper.transpose() - upper).todok()
+        # `asformat` is necessary because subtraction results in other format
+        return (mat + upper.transpose() - upper).asformat(mat.format)
 
     @property
-    def coefficients(self) -> dok_array:
+    def coefficients(self) -> ndarray | sparray:
         """Returns the coefficients of the quadratic expression.
 
         Returns:
@@ -194,7 +302,7 @@ class QuadraticExpression(OptimizationProblemElement):
         Args:
             coefficients: The coefficients of the quadratic expression.
         """
-        self._coefficients = self._coeffs_to_dok_array(coefficients)
+        self._coefficients = self._coeffs_to_representation(coefficients)
 
     def to_array(self, symmetric: bool = False) -> ndarray:
         """Returns the coefficients of the quadratic expression as array.
@@ -207,6 +315,8 @@ class QuadraticExpression(OptimizationProblemElement):
             An array with the coefficients corresponding to the quadratic expression.
         """
         coeffs = self._symmetric_matrix(self._coefficients) if symmetric else self._coefficients
+        if isinstance(coeffs, ndarray):
+            return cast(ndarray, coeffs.copy())
         return cast(ndarray, coeffs.toarray())
 
     def to_dict(
@@ -225,27 +335,38 @@ class QuadraticExpression(OptimizationProblemElement):
             An dictionary with the coefficients corresponding to the quadratic expression.
         """
         coeffs = self._symmetric_matrix(self._coefficients) if symmetric else self._coefficients
-        if use_name:
-            return {
-                (
-                    self.optimization_problem.variables[i].name,
-                    self.optimization_problem.variables[j].name,
-                ): v
-                for (i, j), v in coeffs.items()
-            }
-        return {(int(i), int(j)): v for (i, j), v in coeffs.items()}
+        if isinstance(coeffs, ndarray):
+            rows, cols = np.nonzero(coeffs)
+            items = ((int(i), int(j), float(coeffs[i, j])) for i, j in zip(rows, cols, strict=True))
+        else:
+            coo = coeffs.tocoo()
+            items = (
+                (int(i), int(j), float(v))
+                for i, j, v in zip(coo.coords[0], coo.coords[1], coo.data, strict=True)
+            )
 
-    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float:
+        if use_name:
+            variables = self.optimization_problem.variables
+            return {(variables[i].name, variables[j].name): v for i, j, v in items}
+        return {(i, j): v for i, j, v in items}
+
+    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float | ndarray:
         """Evaluate the quadratic expression for given variables: x * Q * x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the expression is evaluated for each row at once.
 
 
         Returns:
-            The value of the quadratic expression given the variable values.
+            The value of the quadratic expression given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         x = self._cast_as_array(x)
+
+        if x.ndim == 2:
+            # avoid materializing an (n_samples, n_samples) intermediate from x @ Q @ x.T
+            return cast(ndarray, np.sum((x @ self.coefficients) * x, axis=1))
 
         # compute x * Q * x for the quadratic expression
         val = x @ self.coefficients @ x
@@ -257,21 +378,26 @@ class QuadraticExpression(OptimizationProblemElement):
         """Evaluate the gradient of the quadratic expression for given variables.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the gradient is evaluated for each row at once.
 
 
         Returns:
-            The value of the gradient quadratic expression given the variable values.
+            The value of the gradient quadratic expression given the variable values. Shape
+            ``(n_vars,)`` for 1-D input, or ``(n_samples, n_vars)`` for 2-D input.
         """
         x = self._cast_as_array(x)
 
-        # compute (Q' + Q) * x for the quadratic expression
-        val = (self.coefficients.transpose() + self.coefficients) @ x
+        # compute (Q' + Q) * x (per-row, for 2-D x) as x @ Q + x @ Q', which never forms the
+        # (n, n) matrix Q + Q' and works unchanged for 1-D and 2-D x (x @ Q == (Q' @ x)' for
+        # 1-D x, so this matches the un-batched Q @ x + x @ Q formulation)
+        mat = self._coefficients
+        val = x @ mat + x @ mat.T
 
         # return the result
         return cast(ndarray, val)
 
-    def _cast_as_array(self, x: ndarray | list | dict[str | int, float]) -> dok_array | np.ndarray:
+    def _cast_as_array(self, x: ndarray | list | dict[str | int, float]) -> np.ndarray:
         """Converts input to an array if it is a dictionary or list."""
         if isinstance(x, dict):
             x_aux = np.zeros(self.optimization_problem.get_num_vars())

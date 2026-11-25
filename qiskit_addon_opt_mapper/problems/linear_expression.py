@@ -40,10 +40,11 @@ class Representation(Enum):
     """The internal storage representation of an expression's coefficients.
 
     .. warning::
-        ``COO`` does not support scalar element access: ``expr[i]`` and ``expr[i] = v`` are
-        unsafe on ``Representation.COO`` and may raise ``TypeError`` depending on the installed
-        scipy version. Use :meth:`~LinearExpression.to_dict` or
-        :meth:`~LinearExpression.to_array` to read coefficients, or pick a different
+        ``COO`` does not support scalar element access: on a :class:`~LinearExpression`,
+        ``expr[i]`` and ``expr[i] = v``, and on a :class:`~QuadraticExpression`,
+        ``expr[i, j]`` and ``expr[i, j] = v``, are unsafe on ``Representation.COO`` and
+        may raise ``TypeError`` depending on the installed scipy version. Use
+        ``to_dict()`` or ``to_array()`` to read coefficients, or pick a different
         representation if per-element access is needed.
     """
 
@@ -238,15 +239,17 @@ class LinearExpression(OptimizationProblemElement):
             return {self.optimization_problem.variables[k].name: v for k, v in items}
         return dict(items)
 
-    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float | ndarray:
         """Evaluate the linear expression for given variables.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the expression is evaluated for each row at once.
 
 
         Returns:
-            The value of the linear expression given the variable values.
+            The value of the linear expression given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         x_arr: ndarray
         if isinstance(x, dict):
@@ -258,6 +261,10 @@ class LinearExpression(OptimizationProblemElement):
                 x_arr[index] = value
         else:
             x_arr = np.asarray(x, dtype=np.float64)
+
+        if x_arr.ndim == 2:
+            # one matmul for the whole batch, no Python loop over samples
+            return cast(ndarray, x_arr @ self.coefficients)
 
         # compute the dot-product of the input and the linear coefficients
         val = self.coefficients @ x_arr

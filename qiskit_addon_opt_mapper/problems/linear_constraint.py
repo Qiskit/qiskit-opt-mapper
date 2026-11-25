@@ -18,7 +18,7 @@ from numpy import ndarray
 from scipy.sparse import sparray, spmatrix
 
 from .constraint import Constraint, ConstraintSense
-from .linear_expression import LinearExpression
+from .linear_expression import LinearExpression, Representation
 
 
 class LinearConstraint(Constraint):
@@ -34,6 +34,7 @@ class LinearConstraint(Constraint):
         linear: ndarray | sparray | spmatrix | list[float] | dict[str | int, float],
         sense: ConstraintSense,
         rhs: float,
+        representation: Representation = Representation.DENSE,
     ) -> None:
         """Init method.
 
@@ -43,9 +44,10 @@ class LinearConstraint(Constraint):
             linear: The coefficients specifying the linear constraint.
             sense: The sense of the constraint.
             rhs: The right-hand-side of the constraint.
+            representation: The internal storage representation of ``linear``.
         """
         super().__init__(optimization_problem, name, sense, rhs)
-        self._linear = LinearExpression(optimization_problem, linear)
+        self._linear = LinearExpression(optimization_problem, linear, representation=representation)
 
     @property
     def linear(self) -> LinearExpression:
@@ -71,15 +73,17 @@ class LinearConstraint(Constraint):
         """
         self._linear = LinearExpression(self.optimization_problem, linear)
 
-    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float | ndarray:
         """Evaluate the left-hand-side of the constraint.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the constraint is evaluated for each row at once.
 
 
         Returns:
-            The left-hand-side of the constraint given the variable values.
+            The left-hand-side of the constraint given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         return self.linear.evaluate(x)
 

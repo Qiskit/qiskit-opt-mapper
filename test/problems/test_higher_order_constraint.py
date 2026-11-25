@@ -112,3 +112,26 @@ def test_higher_order_constraint_with_multiple_orders_evaluate(op3):
     hos = con.higher_order
     assert set(hos.keys()) == {3, 4}
     assert hos[3].order == 3 and hos[4].order == 4
+
+
+def test_higher_order_constraint_batched_evaluate(op3):
+    """evaluate() on 2-D x returns one value per row, matching a per-row loop."""
+    linear = {0: 1.5, 2: -2.0}
+    quadratic = {(0, 1): 3.0, (2, 2): -1.0}
+    higher_order = {3: {(0, 0, 1): 2.0}}
+
+    con = HigherOrderConstraint(
+        optimization_problem=op3,
+        name="batched",
+        linear=linear,
+        quadratic=quadratic,
+        higher_order=higher_order,
+        sense=Constraint.Sense.LE,
+        rhs=100.0,
+    )
+
+    x_batch = np.array([[2.0, 1.0, -1.0], [1.0, 2.0, 3.0]])
+    batched = con.evaluate(x_batch)
+    looped = np.array([con.evaluate(row) for row in x_batch])
+    assert batched.shape == (2,)
+    np.testing.assert_allclose(batched, looped)

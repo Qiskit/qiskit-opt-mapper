@@ -61,6 +61,22 @@ def test_base_cannot_be_instantiated():
         BaseOptimizationProblem()  # pylint: disable=abstract-class-instantiated
 
 
+def test_is_feasible_batched():
+    """is_feasible() batches over a 2-D input on MultiObjectiveProblem, same as on
+    OptimizationProblem, since both inherit it from BaseOptimizationProblem."""
+    problem = MultiObjectiveProblem("m")
+    problem.continuous_var(-1, 1, "x")
+    problem.continuous_var(-10, 10, "y")
+    problem.add_objective(linear={"x": 1, "y": 1})
+    problem.add_objective(linear={"x": 1}, sense="max")
+    problem.linear_constraint({"x": 1, "y": 1}, "<=", 10, "c0")
+    problem.linear_constraint({"x": 1, "y": 1}, "==", 5, "c1")
+
+    x_batch = np.array([[0, 5], [1, 10], [1, 4]])
+    expected = np.array([True, False, True])
+    np.testing.assert_array_equal(problem.is_feasible(x_batch), expected)
+
+
 OPTIMIZATION_PROBLEM_PUBLIC_NAMES = {
     "Status",
     "binary_var",

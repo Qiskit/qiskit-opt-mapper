@@ -17,12 +17,14 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, cast
 
+import numpy as np
 from numpy import ndarray
 from scipy.sparse import sparray, spmatrix
 
 from ..exceptions import OptimizationError
 from .higher_order_expression import HigherOrderExpression
 from .linear_constraint import LinearExpression
+from .linear_expression import Representation
 from .optimization_problem_element import OptimizationProblemElement
 from .quadratic_expression import QuadraticExpression
 
@@ -80,6 +82,8 @@ class OptimizationObjective(OptimizationProblemElement):
         higher_order: dict[int, CoeffLike] | None = None,
         sense: ObjSense = ObjSense.MINIMIZE,
         name: str = "",
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Construct an objective with linear, quadratic, and optional higher-order parts.
 
@@ -92,6 +96,8 @@ class OptimizationObjective(OptimizationProblemElement):
             sense: The sense of the objective function (e.g., MINIMIZE, MAXIMIZE).
             name: The name of the objective function. The default empty string leaves the
                 objective unnamed.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         super().__init__(optimization_problem)
         self._constant = float(constant)
@@ -99,11 +105,15 @@ class OptimizationObjective(OptimizationProblemElement):
 
         if linear is None:
             linear = {}
-        self._linear = LinearExpression(optimization_problem, linear)
+        self._linear = LinearExpression(
+            optimization_problem, linear, representation=linear_representation
+        )
 
         if quadratic is None:
             quadratic = {}
-        self._quadratic = QuadraticExpression(optimization_problem, quadratic)
+        self._quadratic = QuadraticExpression(
+            optimization_problem, quadratic, representation=quadratic_representation
+        )
 
         # Store multiple higher-order expressions keyed by order (k>=3)
         if higher_order is None:
@@ -150,7 +160,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             linear: The linear coefficients of the left-hand-side.
         """
-        self._linear = LinearExpression(self.optimization_problem, linear)
+        self._linear = LinearExpression(
+            self.optimization_problem, linear, representation=self._linear.representation
+        )
 
     @property
     def quadratic(self) -> QuadraticExpression:
@@ -177,7 +189,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             quadratic: The quadratic coefficients of the left-hand-side.
         """
-        self._quadratic = QuadraticExpression(self.optimization_problem, quadratic)
+        self._quadratic = QuadraticExpression(
+            self.optimization_problem, quadratic, representation=self._quadratic.representation
+        )
 
     @property
     def higher_order(self) -> dict[int, HigherOrderExpression]:
@@ -233,17 +247,20 @@ class OptimizationObjective(OptimizationProblemElement):
         """
         self._sense = sense
 
-    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[int | str, float]) -> float | ndarray:
         """Evaluate objective value at x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the objective is evaluated for each row at once.
 
         Returns:
-            The objective value given the variable values.
+            The objective value given the variable values. A scalar for 1-D input, or a 1-D
+            array of ``n_samples`` values for 2-D input.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
+        n_vars = np.asarray(x).shape[-1] if not isinstance(x, dict) else n
+        if self.linear.coefficients.shape != (n,) or n_vars != n:
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"
@@ -251,19 +268,24 @@ class OptimizationObjective(OptimizationProblemElement):
         val = self.constant + self.linear.evaluate(x) + self.quadratic.evaluate(x)
         for expr in self._higher_order.values():
             val += expr.evaluate(x)
+        if isinstance(val, ndarray):
+            return val
         return float(val)
 
     def evaluate_gradient(self, x: ndarray | list | dict[int | str, float]) -> ndarray:
         """Evaluate gradient of the objective at x.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the gradient is evaluated for each row at once.
 
         Returns:
-            The gradient of the objective function given the variable values.
+            The gradient of the objective function given the variable values. Shape
+            ``(n_vars,)`` for 1-D input, or ``(n_samples, n_vars)`` for 2-D input.
         """
         n = self.optimization_problem.get_num_vars()
-        if self.linear.coefficients.shape != (n,) or self.quadratic.coefficients.shape != (n, n):
+        n_vars = np.asarray(x).shape[-1] if not isinstance(x, dict) else n
+        if self.linear.coefficients.shape != (n,) or n_vars != n:
             raise OptimizationError(
                 "The shape of the objective function does not match the number of variables. "
                 "Define the objective after defining all variables"

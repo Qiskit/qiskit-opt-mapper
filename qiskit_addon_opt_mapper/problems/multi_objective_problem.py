@@ -24,6 +24,7 @@ from .base_optimization_problem import (
     LinearCoeffLike,
     QuadraticCoeffLike,
 )
+from .linear_expression import Representation
 from .optimization_objective import ObjSense, OptimizationObjective
 
 logger = logging.getLogger(__name__)
@@ -215,7 +216,7 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             return "no objectives"
         return "; ".join(obj.render() for obj in self._objectives)
 
-    def _append_or_set_objective_from_parts(
+    def _append_or_set_objective_from_parts(  # pylint: disable=too-many-positional-arguments
         self,
         sense: ObjSense,
         *,
@@ -224,6 +225,8 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
         quadratic: QuadraticCoeffLike | None = None,
         higher_order: HigherOrderCoeffLike | None = None,
         name: str = "",
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Appends an objective built from its already-assembled parts.
 
@@ -239,6 +242,8 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             higher_order: The coefficients of the higher-order part.
             name: The name of the objective. The default empty string selects the next default
                 name, e.g., ``f0``.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         self._append_objective(
             sense,
@@ -247,9 +252,11 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             quadratic=quadratic,
             higher_order=higher_order,
             name=name,
+            linear_representation=linear_representation,
+            quadratic_representation=quadratic_representation,
         )
 
-    def _append_objective(
+    def _append_objective(  # pylint: disable=too-many-positional-arguments
         self,
         sense: ObjSense,
         *,
@@ -258,6 +265,8 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
         quadratic: QuadraticCoeffLike | None,
         higher_order: HigherOrderCoeffLike | None,
         name: str | None,
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> OptimizationObjective:
         """Builds an objective and appends it without checking that ``name`` is printable.
 
@@ -269,6 +278,8 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             higher_order: The coefficients of the higher-order part.
             name: The name of the objective. If it is ``None`` or empty, the next default name,
                 e.g., ``f0``, is used.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
 
         Returns:
             The appended objective.
@@ -292,6 +303,8 @@ class MultiObjectiveProblem(BaseOptimizationProblem):
             {} if higher_order is None else higher_order,
             sense,
             name,
+            linear_representation=linear_representation,
+            quadratic_representation=quadratic_representation,
         )
         self._objectives_index[name] = len(self._objectives)
         self._objectives.append(objective)

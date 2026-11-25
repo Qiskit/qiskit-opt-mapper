@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -151,14 +151,16 @@ class Constraint(OptimizationProblemElement):
         self._rhs = rhs
 
     @abstractmethod
-    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float | ndarray:
         """Evaluate left-hand-side of constraint for given values of variables.
 
         Args:
-            x: The values to be used for the variables.
+            x: The values to be used for the variables. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the constraint is evaluated for each row at once.
 
 
         Returns:
-            The left-hand-side of the constraint.
+            The left-hand-side of the constraint. A scalar for 1-D input, or a 1-D array of
+            ``n_samples`` values for 2-D input.
         """
         raise NotImplementedError()
