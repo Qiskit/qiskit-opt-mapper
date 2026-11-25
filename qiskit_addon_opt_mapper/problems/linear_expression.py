@@ -40,10 +40,11 @@ class Representation(Enum):
     """The internal storage representation of an expression's coefficients.
 
     .. warning::
-        ``COO`` does not support scalar element access: ``expr[i]`` and ``expr[i] = v`` are
-        unsafe on ``Representation.COO`` and may raise ``TypeError`` depending on the installed
-        scipy version. Use :meth:`~LinearExpression.to_dict` or
-        :meth:`~LinearExpression.to_array` to read coefficients, or pick a different
+        ``COO`` does not support scalar element access: on a :class:`~LinearExpression`,
+        ``expr[i]`` and ``expr[i] = v``, and on a :class:`~QuadraticExpression`,
+        ``expr[i, j]`` and ``expr[i, j] = v``, are unsafe on ``Representation.COO`` and
+        may raise ``TypeError`` depending on the installed scipy version. Use
+        ``to_dict()`` or ``to_array()`` to read coefficients, or pick a different
         representation if per-element access is needed.
     """
 

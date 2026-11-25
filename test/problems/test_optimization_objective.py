@@ -18,9 +18,12 @@ import pytest
 # --- adjust imports to your package layout ---
 from qiskit_addon_opt_mapper import OptimizationError
 from qiskit_addon_opt_mapper.problems import (
+    LinearExpression,
     ObjSense,
     OptimizationObjective,
     OptimizationProblem,
+    QuadraticExpression,
+    Representation,
 )
 
 # ---------------------------------------------
@@ -196,6 +199,68 @@ def test_render_public_method(op3):
 
     op3.minimize(linear={0: 1.0}, name="cost")
     assert op3.objective.render() == "minimize x0 'cost'"
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.DENSE, Representation.CSR),
+        (Representation.COO, Representation.DENSE),
+        (Representation.CSR, Representation.CSC),
+        # Representation.CSC is intentionally absent for the linear side: csc_array
+        # has no 1-D form, so LinearExpression(..., representation=Representation.CSC)
+        # raises OptimizationError.
+    ],
+)
+def test_evaluate_shape_guard_does_not_spuriously_fire_for_non_dense(
+    op3, linear_rep, quadratic_rep
+):
+    """evaluate()/evaluate_gradient()'s (n,)/(n,n) shape guard passes for any representation."""
+    obj = OptimizationObjective(optimization_problem=op3, sense=ObjSense.MINIMIZE)
+    # Representation propagation through the public setters is PR 4's scope; until then,
+    # exercise the shape guard directly against a non-dense expression.
+    # TODO(PR 4 - dense storage work): switch to the public obj.linear/obj.quadratic
+    # setters once they stop rebuilding expressions with the default dense
+    # representation, and drop these private-attribute writes.
+    obj._linear = LinearExpression(op3, {0: 1.0}, representation=linear_rep)
+    obj._quadratic = QuadraticExpression(op3, {(1, 2): 2.0}, representation=quadratic_rep)
+    assert obj.linear.representation == linear_rep
+    assert obj.quadratic.representation == quadratic_rep
+
+    x = [1.0, 2.0, 3.0]
+    assert obj.evaluate(x) == pytest.approx(13.0)
+    assert np.allclose(obj.evaluate_gradient(x), [1.0, 6.0, 4.0])
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+    ],
+)
+def test_evaluate_shape_guard_fires_for_stale_expressions(op3, linear_rep, quadratic_rep):
+    """evaluate()/evaluate_gradient() raise once a variable is added after the objective
+
+    was built, for every representation (negative control for the shape guard).
+    """
+    obj = OptimizationObjective(optimization_problem=op3, sense=ObjSense.MINIMIZE)
+    obj._linear = LinearExpression(op3, {0: 1.0}, representation=linear_rep)
+    obj._quadratic = QuadraticExpression(op3, {(1, 2): 2.0}, representation=quadratic_rep)
+
+    op3.integer_var(-10.0, 10.0, "x3")
+    x = [1.0, 2.0, 3.0, 4.0]
+
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate(x)
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate_gradient(x)
 
 
 def test_non_printable_name_warns():
