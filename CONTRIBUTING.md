@@ -19,6 +19,10 @@ We require 100% coverage in all new code.
 In rare cases where it is not possible to test a code block, we mark it with ``# pragma: no cover`` so that
 the ``coverage`` tests will pass.
 
+Editing a file must bump the year(s) in its copyright header to include the current year. This is checked by
+`tox -e lint` (via [`tools/check_copyright.py`](tools/check_copyright.py)). If the check fails, fix the headers
+automatically by running ``python tools/check_copyright.py -path .`` from the repository root.
+
 [Qiskit]: https://www.ibm.com/quantum/qiskit
 [Python]: https://www.python.org/
 [tox]: https://github.com/tox-dev/tox

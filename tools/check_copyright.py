@@ -15,39 +15,35 @@
 from __future__ import annotations
 
 import argparse
-import builtins
 import contextlib
 import datetime
 import os
 import subprocess
 import sys
-import traceback
 
 
 class CopyrightChecker:
     """Check copyright year in file headers."""
 
     _COPYRIGHT_STRING = "# (C) Copyright IBM "
+    _YEAR_LENGTH = 4
+    _YEAR_PREFIX = "20"
 
     def __init__(self, root_dir: str, check: bool) -> None:
         """Initialize the checker for files under ``root_dir``."""
         self._root_dir = root_dir
         self._check = check
         self._current_year = datetime.datetime.now().year
+        # Files modified in the working tree are treated as "last changed this year",
+        # so local -check results can differ from a clean-checkout CI run.
         self._changed_files = self._get_changed_files()
 
     @staticmethod
-    def _exception_to_string(excp: Exception) -> str:
-        stack = traceback.extract_stack()[:-3] + traceback.extract_tb(excp.__traceback__)
-        pretty = traceback.format_list(stack)
-        return "".join(pretty) + f"\n  {excp.__class__} {excp}"
-
-    @staticmethod
-    def _get_year_from_date(date) -> int | None:
-        if not date or len(date) < 4:
+    def _get_year_from_date(date: str) -> int | None:
+        if not date or len(date) < CopyrightChecker._YEAR_LENGTH:
             return None
 
-        return int(date[:4])
+        return int(date[: CopyrightChecker._YEAR_LENGTH])
 
     def _cmd_execute(self, args: list[str]) -> tuple[str, str | None]:
         env = {}
@@ -77,34 +73,58 @@ class CopyrightChecker:
     def _get_changed_files(self) -> list[str]:
         out_str, err_str = self._cmd_execute(["git", "diff", "--name-only", "HEAD"])
         if err_str:
-            raise builtins.Exception(err_str)
+            raise RuntimeError(err_str)
 
         return out_str.splitlines()
 
     def _get_file_last_year(self, relative_path: str) -> int | None:
-        last_year = None
-        errors = []
-        try:
-            out_str, err_str = self._cmd_execute(
-                ["git", "log", "-1", "--format=%cI", relative_path]
-            )
-            last_year = CopyrightChecker._get_year_from_date(out_str)
-            if err_str:
-                errors.append(err_str)
-        except builtins.Exception as ex:  # pylint: disable=broad-except
-            errors.append(f"'{relative_path}' Last year: {ex!s}")
+        out_str, err_str = self._cmd_execute(["git", "log", "-1", "--format=%cI", relative_path])
+        if err_str:
+            raise RuntimeError(f"'{relative_path}' last year: {err_str}")
 
-        if errors:
-            raise ValueError(" - ".join(errors))
+        return CopyrightChecker._get_year_from_date(out_str)
 
-        return last_year
+    @staticmethod
+    def _parse_header_years(line: str) -> tuple[int | None, int | None]:
+        """Parse the start and last year out of a copyright header line."""
+        years = []
+        for word in line.strip().split():
+            for year in word.strip().split(","):
+                if year.startswith(CopyrightChecker._YEAR_PREFIX) and (
+                    len(year) >= CopyrightChecker._YEAR_LENGTH
+                ):
+                    with contextlib.suppress(ValueError):
+                        years.append(int(year[: CopyrightChecker._YEAR_LENGTH]))
+
+        if len(years) > 1:
+            return years[0], years[1]
+        if len(years) == 1:
+            return years[0], years[0]
+        return None, None
+
+    @staticmethod
+    def _expected_header(start_year: int | None, last_year: int) -> str:
+        """Build the expected copyright header line ending in ``last_year``."""
+        header = CopyrightChecker._COPYRIGHT_STRING
+        if start_year and start_year != last_year:
+            header += f"{start_year}, "
+        header += f"{last_year}.\n"
+        return header
+
+    @staticmethod
+    def _rewrite_line(file_path: str, file_lines: list[str], idx: int, new_line: str) -> None:
+        """Replace line ``idx`` in ``file_path`` with ``new_line`` and save the file."""
+        file_lines[idx] = new_line
+        with open(file_path, "w", encoding="utf8") as file:
+            file.writelines(file_lines)
 
     def check_copyright(self, file_path: str) -> tuple[bool, bool]:
         """Check (and optionally fix) the copyright year for a single file."""
         file_with_invalid_year = False
         file_has_header = False
+        relative_path = os.path.relpath(file_path, self._root_dir)
         try:
-            new_line = CopyrightChecker._COPYRIGHT_STRING
+            new_line = ""
             idx_new_line = -1
             with open(file_path, encoding="utf8") as file:
                 file_lines = file.readlines()
@@ -113,22 +133,11 @@ class CopyrightChecker:
                     continue
 
                 file_has_header = True
-                relative_path = os.path.relpath(file_path, self._root_dir)
-                curr_years = []
-                for word in line.strip().split():
-                    for year in word.strip().split(","):
-                        if year.startswith("20") and len(year) >= 4:
-                            with contextlib.suppress(ValueError):
-                                curr_years.append(int(year[0:4]))
+                header_start_year, header_last_year = CopyrightChecker._parse_header_years(line)
 
-                header_start_year = None
-                header_last_year = None
-                if len(curr_years) > 1:
-                    header_start_year = curr_years[0]
-                    header_last_year = curr_years[1]
-                elif len(curr_years) == 1:
-                    header_start_year = header_last_year = curr_years[0]
-
+                # last_year is the single source of truth: it drives both the
+                # "is this wrong" check below and the replacement header text,
+                # so -check and the fixer can never disagree on the target year.
                 last_year: int | None
                 if relative_path in self._changed_files:
                     self._changed_files.remove(relative_path)
@@ -137,10 +146,7 @@ class CopyrightChecker:
                     last_year = self._get_file_last_year(relative_path)
 
                 if last_year and header_last_year != last_year:
-                    if header_start_year and header_start_year != last_year:
-                        new_line += f"{header_start_year}, "
-
-                    new_line += f"{self._current_year}.\n"
+                    new_line = CopyrightChecker._expected_header(header_start_year, last_year)
                     if self._check:
                         print(
                             f"Wrong Copyright Year: '{relative_path}': "
@@ -152,11 +158,9 @@ class CopyrightChecker:
                 break
 
             if not self._check and idx_new_line >= 0:
-                file_lines[idx_new_line] = new_line
-                with open(file_path, "w", encoding="utf8") as file:
-                    file.writelines(file_lines)
+                CopyrightChecker._rewrite_line(file_path, file_lines, idx_new_line, new_line)
                 file_with_invalid_year = False
-                print(f"Fixed copyright year for {os.path.relpath(file_path, self._root_dir)}.")
+                print(f"Fixed copyright year for {relative_path}.")
 
         except UnicodeDecodeError:
             return file_with_invalid_year, file_has_header
@@ -164,32 +168,31 @@ class CopyrightChecker:
         return file_with_invalid_year, file_has_header
 
     def check(self) -> tuple[int, int]:
-        """Walk the tree and check/fix copyright years."""
-        return self._check_copyright(self._root_dir)
-
-    def _check_copyright(self, path: str) -> tuple[int, int]:
+        """Check/fix copyright years for all git-tracked files under ``root_dir``."""
         files_with_invalid_year = 0
         files_with_header = 0
-        for item in os.listdir(path):
-            fullpath = os.path.join(path, item)
-            if os.path.isdir(fullpath):
-                if not item.startswith("."):
-                    invalid_year, has_header = self._check_copyright(fullpath)
-                    files_with_invalid_year += invalid_year
-                    files_with_header += has_header
+        # Use git ls-files rather than walking the directory tree, so that nested
+        # git repositories (e.g. vendored subdirectories) and untracked/build
+        # artifacts are never scanned.
+        out_str, err_str = self._cmd_execute(["git", "ls-files"])
+        if err_str:
+            raise RuntimeError(err_str)
+
+        for relative_path in out_str.splitlines():
+            fullpath = os.path.join(self._root_dir, relative_path)
+            if not os.path.isfile(fullpath):
                 continue
 
-            if os.path.isfile(fullpath):
-                file_with_invalid_year, file_has_header = self.check_copyright(fullpath)
-                if file_with_invalid_year:
-                    files_with_invalid_year += 1
-                if file_has_header:
-                    files_with_header += 1
+            file_with_invalid_year, file_has_header = self.check_copyright(fullpath)
+            if file_with_invalid_year:
+                files_with_invalid_year += 1
+            if file_has_header:
+                files_with_header += 1
 
         return files_with_invalid_year, files_with_header
 
 
-def check_path(path):
+def check_path(path: str) -> str:
     """Validate the path argument."""
     if not path or os.path.isdir(path):
         return path
