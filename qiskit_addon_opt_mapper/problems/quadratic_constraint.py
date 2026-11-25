@@ -18,7 +18,7 @@ from numpy import ndarray
 from scipy.sparse import sparray, spmatrix
 
 from .constraint import Constraint, ConstraintSense
-from .linear_expression import LinearExpression
+from .linear_expression import LinearExpression, Representation
 from .quadratic_expression import QuadraticExpression
 
 
@@ -42,6 +42,8 @@ class QuadraticConstraint(Constraint):
         ),
         sense: ConstraintSense,
         rhs: float,
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Constructs a quadratic constraint, consisting of a linear and a quadratic term.
 
@@ -52,10 +54,16 @@ class QuadraticConstraint(Constraint):
             quadratic: The coefficients specifying the linear part of the constraint.
             sense: The sense of the constraint.
             rhs: The right-hand-side of the constraint.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         super().__init__(optimization_problem, name, sense, rhs)
-        self._linear = LinearExpression(optimization_problem, linear)
-        self._quadratic = QuadraticExpression(optimization_problem, quadratic)
+        self._linear = LinearExpression(
+            optimization_problem, linear, representation=linear_representation
+        )
+        self._quadratic = QuadraticExpression(
+            optimization_problem, quadratic, representation=quadratic_representation
+        )
 
     @property
     def linear(self) -> LinearExpression:

@@ -23,6 +23,7 @@ from scipy.sparse import sparray, spmatrix
 from ..exceptions import OptimizationError
 from .higher_order_expression import HigherOrderExpression
 from .linear_constraint import LinearExpression
+from .linear_expression import Representation
 from .optimization_problem_element import OptimizationProblemElement
 from .quadratic_expression import QuadraticExpression
 
@@ -80,6 +81,8 @@ class OptimizationObjective(OptimizationProblemElement):
         higher_order: dict[int, CoeffLike] | None = None,
         sense: ObjSense = ObjSense.MINIMIZE,
         name: str = "",
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Construct an objective with linear, quadratic, and optional higher-order parts.
 
@@ -92,6 +95,8 @@ class OptimizationObjective(OptimizationProblemElement):
             sense: The sense of the objective function (e.g., MINIMIZE, MAXIMIZE).
             name: The name of the objective function. The default empty string leaves the
                 objective unnamed.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         super().__init__(optimization_problem)
         self._constant = float(constant)
@@ -99,11 +104,15 @@ class OptimizationObjective(OptimizationProblemElement):
 
         if linear is None:
             linear = {}
-        self._linear = LinearExpression(optimization_problem, linear)
+        self._linear = LinearExpression(
+            optimization_problem, linear, representation=linear_representation
+        )
 
         if quadratic is None:
             quadratic = {}
-        self._quadratic = QuadraticExpression(optimization_problem, quadratic)
+        self._quadratic = QuadraticExpression(
+            optimization_problem, quadratic, representation=quadratic_representation
+        )
 
         # Store multiple higher-order expressions keyed by order (k>=3)
         if higher_order is None:
@@ -150,7 +159,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             linear: The linear coefficients of the left-hand-side.
         """
-        self._linear = LinearExpression(self.optimization_problem, linear)
+        self._linear = LinearExpression(
+            self.optimization_problem, linear, representation=self._linear.representation
+        )
 
     @property
     def quadratic(self) -> QuadraticExpression:
@@ -177,7 +188,9 @@ class OptimizationObjective(OptimizationProblemElement):
         Args:
             quadratic: The quadratic coefficients of the left-hand-side.
         """
-        self._quadratic = QuadraticExpression(self.optimization_problem, quadratic)
+        self._quadratic = QuadraticExpression(
+            self.optimization_problem, quadratic, representation=self._quadratic.representation
+        )
 
     @property
     def higher_order(self) -> dict[int, HigherOrderExpression]:

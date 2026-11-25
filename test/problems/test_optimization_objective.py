@@ -21,6 +21,7 @@ from qiskit_addon_opt_mapper.problems import (
     ObjSense,
     OptimizationObjective,
     OptimizationProblem,
+    Representation,
 )
 
 # ---------------------------------------------
@@ -196,6 +197,107 @@ def test_render_public_method(op3):
 
     op3.minimize(linear={0: 1.0}, name="cost")
     assert op3.objective.render() == "minimize x0 'cost'"
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.DENSE, Representation.CSR),
+        (Representation.COO, Representation.DENSE),
+        (Representation.CSR, Representation.CSC),
+        # Representation.CSC is intentionally absent for the linear side: csc_array
+        # has no 1-D form, so LinearExpression(..., representation=Representation.CSC)
+        # raises OptimizationError.
+    ],
+)
+def test_evaluate_shape_guard_does_not_spuriously_fire_for_non_dense(
+    op3, linear_rep, quadratic_rep
+):
+    """evaluate()/evaluate_gradient()'s (n,)/(n,n) shape guard passes for any representation."""
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert obj.linear.representation == linear_rep
+    assert obj.quadratic.representation == quadratic_rep
+
+    x = [1.0, 2.0, 3.0]
+    assert obj.evaluate(x) == pytest.approx(13.0)
+    assert np.allclose(obj.evaluate_gradient(x), [1.0, 6.0, 4.0])
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+    ],
+)
+def test_evaluate_shape_guard_fires_for_stale_expressions(op3, linear_rep, quadratic_rep):
+    """evaluate()/evaluate_gradient() raise once a variable is added after the objective
+
+    was built, for every representation (negative control for the shape guard).
+    """
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+
+    op3.integer_var(-10.0, 10.0, "x3")
+    x = [1.0, 2.0, 3.0, 4.0]
+
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate(x)
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate_gradient(x)
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.CSR, Representation.CSC),
+    ],
+)
+def test_linear_quadratic_setters_preserve_representation(op3, linear_rep, quadratic_rep):
+    """Reassigning `linear`/`quadratic` through their public setters keeps the representation.
+
+    Regression test: the setters used to always rebuild a DENSE-represented expression,
+    silently downgrading a non-default representation on every reassignment (e.g. via
+    `_FlipProblemSense`).
+    """
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+
+    obj.linear = {0: 3.0}
+    obj.quadratic = {(1, 2): 4.0}
+
+    assert obj.linear.representation == linear_rep
+    assert obj.quadratic.representation == quadratic_rep
+    assert obj.linear.to_dict() == {0: 3.0}
+    assert obj.quadratic.to_dict() == {(1, 2): 4.0}
 
 
 def test_non_printable_name_warns():
