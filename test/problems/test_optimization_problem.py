@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -23,11 +23,28 @@ from qiskit_addon_opt_mapper.problems import (
     Constraint,
     ObjSense,
     OptimizationObjective,
+    Representation,
     Variable,
     VarType,
 )
+from scipy.sparse import coo_array, csc_array, csr_array, dok_array
 
 from ..optimization_test_case import OptimizationTestCase
+
+LINEAR_REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+}
+
+QUADRATIC_REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+    Representation.CSC: csc_array,
+}
 
 
 @pytest.fixture
@@ -208,6 +225,124 @@ def test_prettyprint_with_higher_orders(op3):
     # The exact formatting may vary; check key phrases exist
     assert "Minimize" in s
     assert "Higher-order constraints" in s
+
+
+def test_higher_order_constraint_without_higher_order_arg_no_unbound_local_error(op3):
+    """higher_order_constraint() with no higher_order kwarg must not raise UnboundLocalError.
+
+    Previously `con` was only assigned inside `if higher_order is not None:` but used
+    unconditionally afterward, crashing on the (default) omitted-kwarg path.
+    """
+    con = op3.higher_order_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=5.0)
+    assert con.higher_order == {}
+    x = [1.0, 1.0, 1.0]
+    assert con.evaluate(x) == 1.0 + 2.0
+
+
+@pytest.mark.parametrize("representation", list(LINEAR_REPRESENTATION_TO_TYPE))
+def test_linear_constraint_representation_kwarg_honored(op3, representation):
+    """linear_constraint()'s representation kwarg is forwarded to the LinearExpression."""
+    con = op3.linear_constraint(linear={0: 1.0}, rhs=1.0, representation=representation)
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[representation])
+
+
+def test_linear_constraint_representation_defaults_to_dense(op3):
+    """Omitting linear_constraint()'s representation kwarg defaults to DENSE."""
+    con = op3.linear_constraint(linear={0: 1.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+def test_quadratic_constraint_representation_kwargs_honored(op3, linear_rep, quadratic_rep):
+    """quadratic_constraint()'s representation kwargs are forwarded to each expression."""
+    con = op3.quadratic_constraint(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        rhs=1.0,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(con.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep])
+
+
+def test_quadratic_constraint_representation_defaults_to_dense(op3):
+    """Omitting quadratic_constraint()'s representation kwargs defaults to DENSE."""
+    con = op3.quadratic_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+    assert isinstance(con.quadratic.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+def test_higher_order_constraint_representation_kwargs_honored(op3, linear_rep, quadratic_rep):
+    """higher_order_constraint()'s representation kwargs are forwarded to each expression."""
+    con = op3.higher_order_constraint(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        rhs=1.0,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(con.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep])
+
+
+def test_higher_order_constraint_representation_defaults_to_dense(op3):
+    """Omitting higher_order_constraint()'s representation kwargs defaults to DENSE."""
+    con = op3.higher_order_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+    assert isinstance(con.quadratic.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("factory", ["minimize", "maximize"])
+def test_minimize_maximize_representation_kwargs_honored(op3, linear_rep, quadratic_rep, factory):
+    """minimize()/maximize()'s representation kwargs are forwarded to the objective."""
+    getattr(op3, factory)(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(op3.objective.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(
+        op3.objective.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep]
+    )
+
+
+@pytest.mark.parametrize("factory", ["minimize", "maximize"])
+def test_minimize_maximize_representation_defaults_to_dense(op3, factory):
+    """Omitting minimize()/maximize()'s representation kwargs defaults to DENSE."""
+    getattr(op3, factory)(linear={0: 1.0}, quadratic={(1, 2): 2.0})
+    assert isinstance(op3.objective.linear.coefficients, np.ndarray)
+    assert isinstance(op3.objective.quadratic.coefficients, np.ndarray)
+
+
+def test_linear_constraint_batched_evaluate(op3):
+    """LinearConstraint.evaluate() on 2-D x matches a per-row loop."""
+    con = op3.linear_constraint(linear={0: 2.0, 1: -1.0}, sense="<=", rhs=10.0)
+    rng = np.random.default_rng(1)
+    x_batch = rng.random((5, 3))
+    batched = con.evaluate(x_batch)
+    looped = np.array([con.evaluate(row) for row in x_batch])
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_quadratic_constraint_batched_evaluate(op3):
+    """QuadraticConstraint.evaluate() on 2-D x matches a per-row loop."""
+    con = op3.quadratic_constraint(
+        linear={0: 2.0}, quadratic={(1, 2): 3.0, (0, 0): -1.0}, sense="<=", rhs=10.0
+    )
+    rng = np.random.default_rng(2)
+    x_batch = rng.random((5, 3))
+    batched = con.evaluate(x_batch)
+    looped = np.array([con.evaluate(row) for row in x_batch])
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
 
 
 class TestOptimizationProblem(OptimizationTestCase):
@@ -1060,6 +1195,41 @@ class TestOptimizationProblem(OptimizationTestCase):
         self.assertEqual("c2", constraints[0].name)
         self.assertEqual("c3", constraints[1].name)
         self.assertEqual("c5", constraints[2].name)
+
+    def test_feasibility_batched(self):
+        """Tests is_feasible() with a 2-D batch of candidate solutions."""
+        q_p = OptimizationProblem("test")
+        _ = q_p.continuous_var(-1, 1, "x")
+        _ = q_p.continuous_var(-10, 10, "y")
+        q_p.minimize(linear={"x": 1, "y": 1})
+        q_p.linear_constraint({"x": 1, "y": 1}, "<=", 10, "c0")
+        q_p.linear_constraint({"x": 1, "y": 1}, ">=", -10, "c1")
+        q_p.linear_constraint({"x": 1, "y": 1}, "==", 5, "c2")
+        q_p.quadratic_constraint({"y": 1}, {("x", "x"): 1}, "<=", 10, "c3")
+        q_p.quadratic_constraint({"y": 1}, {("x", "x"): 1}, ">=", 5, "c4")
+        q_p.quadratic_constraint(None, {("x", "x"): 1, ("y", "y"): 1}, "==", 25, "c5")
+
+        x_batch = np.array([[0, 5], [1, 10], [1, -12], [1, 5], [5, 0], [1, 1], [0, 0]])
+        expected = np.array([True, False, False, False, False, False, False])
+        np.testing.assert_array_equal(q_p.is_feasible(x_batch), expected)
+
+        with self.assertRaises(OptimizationError):
+            q_p.is_feasible(np.zeros((2, 5)))
+
+    def test_feasibility_batched_with_higher_order_constraint(self):
+        """Tests is_feasible() on a batch when the problem has a higher-order constraint."""
+        q_p = OptimizationProblem("test")
+        q_p.binary_var("x")
+        q_p.binary_var("y")
+        q_p.binary_var("z")
+        q_p.minimize(linear={"x": 1, "y": 1, "z": 1})
+        q_p.higher_order_constraint(
+            linear={}, quadratic={}, higher_order={3: {(0, 1, 2): 1.0}}, sense="<=", rhs=0
+        )
+
+        x_batch = np.array([[1, 1, 1], [1, 1, 0], [0, 0, 0]])
+        expected = np.array([False, True, True])
+        np.testing.assert_array_equal(q_p.is_feasible(x_batch), expected)
 
     def test_empty_name(self):
         """Test empty names"""

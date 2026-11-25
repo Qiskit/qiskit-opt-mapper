@@ -21,6 +21,7 @@ from qiskit_addon_opt_mapper.problems import (
     ObjSense,
     OptimizationObjective,
     OptimizationProblem,
+    Representation,
 )
 
 # ---------------------------------------------
@@ -196,6 +197,162 @@ def test_render_public_method(op3):
 
     op3.minimize(linear={0: 1.0}, name="cost")
     assert op3.objective.render() == "minimize x0 'cost'"
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.DENSE, Representation.CSR),
+        (Representation.COO, Representation.DENSE),
+        (Representation.CSR, Representation.CSC),
+        # Representation.CSC is intentionally absent for the linear side: csc_array
+        # has no 1-D form, so LinearExpression(..., representation=Representation.CSC)
+        # raises OptimizationError.
+    ],
+)
+def test_evaluate_shape_guard_does_not_spuriously_fire_for_non_dense(
+    op3, linear_rep, quadratic_rep
+):
+    """evaluate()/evaluate_gradient()'s (n,)/(n,n) shape guard passes for any representation."""
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert obj.linear.representation == linear_rep
+    assert obj.quadratic.representation == quadratic_rep
+
+    x = [1.0, 2.0, 3.0]
+    assert obj.evaluate(x) == pytest.approx(13.0)
+    assert np.allclose(obj.evaluate_gradient(x), [1.0, 6.0, 4.0])
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.DENSE, Representation.DENSE),
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+    ],
+)
+def test_evaluate_shape_guard_fires_for_stale_expressions(op3, linear_rep, quadratic_rep):
+    """evaluate()/evaluate_gradient() raise once a variable is added after the objective
+
+    was built, for every representation (negative control for the shape guard).
+    """
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+
+    op3.integer_var(-10.0, 10.0, "x3")
+    x = [1.0, 2.0, 3.0, 4.0]
+
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate(x)
+    with pytest.raises(OptimizationError, match="shape of the objective function"):
+        obj.evaluate_gradient(x)
+
+
+@pytest.mark.parametrize(
+    "linear_rep,quadratic_rep",
+    [
+        (Representation.COO, Representation.COO),
+        (Representation.DOK, Representation.DOK),
+        (Representation.CSR, Representation.CSR),
+        (Representation.CSR, Representation.CSC),
+    ],
+)
+def test_linear_quadratic_setters_preserve_representation(op3, linear_rep, quadratic_rep):
+    """Reassigning `linear`/`quadratic` through their public setters keeps the representation.
+
+    Regression test: the setters used to always rebuild a DENSE-represented expression,
+    silently downgrading a non-default representation on every reassignment (e.g. via
+    `_FlipProblemSense`).
+    """
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        sense=ObjSense.MINIMIZE,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+
+    obj.linear = {0: 3.0}
+    obj.quadratic = {(1, 2): 4.0}
+
+    assert obj.linear.representation == linear_rep
+    assert obj.quadratic.representation == quadratic_rep
+    assert obj.linear.to_dict() == {0: 3.0}
+    assert obj.quadratic.to_dict() == {(1, 2): 4.0}
+
+
+def test_batched_evaluate_matches_looped_scalar(op3):
+    """evaluate() on 2-D x returns one value per row, matching a per-row loop."""
+    linear = {0: 1.5, 1: -2.0}
+    quadratic = {(2, 2): 3.0}
+    higher_orders = {3: {(0, 0, 1): 2.0}}
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear=linear,
+        quadratic=quadratic,
+        higher_order=higher_orders,
+        sense=ObjSense.MINIMIZE,
+    )
+
+    rng = np.random.default_rng(7)
+    x_batch = rng.random((5, 3))
+
+    batched = obj.evaluate(x_batch)
+    looped = np.array([obj.evaluate(row) for row in x_batch])
+
+    assert isinstance(batched, np.ndarray)
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_batched_evaluate_gradient_matches_looped_scalar(op3):
+    """evaluate_gradient() on 2-D x returns one gradient row per sample."""
+    linear = {0: 1.5, 1: -2.0}
+    quadratic = {(2, 2): 3.0}
+    higher_orders = {3: {(0, 0, 1): 2.0}}
+    obj = OptimizationObjective(
+        optimization_problem=op3,
+        linear=linear,
+        quadratic=quadratic,
+        higher_order=higher_orders,
+        sense=ObjSense.MINIMIZE,
+    )
+
+    rng = np.random.default_rng(8)
+    x_batch = rng.random((5, 3))
+
+    batched = obj.evaluate_gradient(x_batch)
+    looped = np.array([obj.evaluate_gradient(row) for row in x_batch])
+
+    assert batched.shape == (5, 3)
+    np.testing.assert_allclose(batched, looped)
+
+
+def test_batched_evaluate_single_sample_matches_1d(op3):
+    obj = OptimizationObjective(optimization_problem=op3, linear={0: 1.0}, sense=ObjSense.MINIMIZE)
+    x = np.array([1.0, 2.0, 3.0])
+    batched = obj.evaluate(x.reshape(1, 3))
+    assert batched.shape == (1,)
+    assert batched[0] == pytest.approx(obj.evaluate(x))
 
 
 def test_non_printable_name_warns():

@@ -1,6 +1,6 @@
 # This code is a Qiskit project.
 #
-# (C) Copyright IBM 2025.
+# (C) Copyright IBM 2025, 2026.
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -18,7 +18,7 @@ from scipy.sparse import spmatrix
 
 from .constraint import Constraint, ConstraintSense
 from .higher_order_expression import HigherOrderExpression
-from .linear_expression import LinearExpression
+from .linear_expression import LinearExpression, Representation
 from .quadratic_expression import QuadraticExpression
 
 CoeffLike = ndarray | dict[tuple[str | int, ...], float] | list
@@ -49,6 +49,8 @@ class HigherOrderConstraint(Constraint):
         higher_order: dict[int, CoeffLike] | None = None,
         sense: ConstraintSense = ConstraintSense.LE,
         rhs: float = 0.0,
+        linear_representation: Representation = Representation.DENSE,
+        quadratic_representation: Representation = Representation.DENSE,
     ) -> None:
         """Construct a higher-order constraint with linear, quadratic, and optional higher-order parts.
 
@@ -60,12 +62,20 @@ class HigherOrderConstraint(Constraint):
             higher_order: A single higher-order expression or a dictionary of {order: coeffs} for multiple orders (k≥3).
             sense: The sense of the constraint (e.g., LE, <=).
             rhs: The right-hand-side value of the constraint.
+            linear_representation: The internal storage representation of ``linear``.
+            quadratic_representation: The internal storage representation of ``quadratic``.
         """
         super().__init__(optimization_problem, name, sense, rhs)
 
-        self._linear = LinearExpression(optimization_problem, {} if linear is None else linear)
+        self._linear = LinearExpression(
+            optimization_problem,
+            {} if linear is None else linear,
+            representation=linear_representation,
+        )
         self._quadratic = QuadraticExpression(
-            optimization_problem, {} if quadratic is None else quadratic
+            optimization_problem,
+            {} if quadratic is None else quadratic,
+            representation=quadratic_representation,
         )
 
         # Store multiple higher-order expressions keyed by order (k>=3)
@@ -135,18 +145,22 @@ class HigherOrderConstraint(Constraint):
         for k, coeffs in higher_order.items():
             self._higher_order[k] = HigherOrderExpression(self.optimization_problem, coeffs)
 
-    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float:
+    def evaluate(self, x: ndarray | list | dict[str | int, float]) -> float | ndarray:
         """Evaluate the left-hand-side of the constraint.
 
         Args:
-            x: The values of the variables to be evaluated.
+            x: The values of the variables to be evaluated. If ``x`` is 2-D of shape
+                ``(n_samples, n_vars)``, the constraint is evaluated for each row at once.
 
         Returns:
-            The left-hand-side of the constraint given the variable values.
+            The left-hand-side of the constraint given the variable values. A scalar for 1-D
+            input, or a 1-D array of ``n_samples`` values for 2-D input.
         """
         val = self.linear.evaluate(x) + self.quadratic.evaluate(x)
         for expr in self._higher_order.values():
             val += expr.evaluate(x)
+        if isinstance(val, ndarray):
+            return val
         return float(val)
 
     def __repr__(self):

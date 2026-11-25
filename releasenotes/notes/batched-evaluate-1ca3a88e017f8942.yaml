@@ -1,0 +1,11 @@
+---
+features:
+  - |
+    ``evaluate()`` on
+    :class:`~qiskit_addon_opt_mapper.problems.LinearExpression`,
+    :class:`~qiskit_addon_opt_mapper.problems.QuadraticExpression`,
+    :class:`~qiskit_addon_opt_mapper.problems.HigherOrderExpression`, and
+    :class:`~qiskit_addon_opt_mapper.problems.OptimizationObjective` now accepts a
+    2-D array of shape ``(n_samples, n_vars)`` and evaluates all samples in a single
+    batched computation, returning a 1-D array of ``n_samples`` values instead of
+    requiring a Python loop over individual 1-D inputs.

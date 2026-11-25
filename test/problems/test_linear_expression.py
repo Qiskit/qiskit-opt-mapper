@@ -253,3 +253,33 @@ def test_repr_and_str():
     expr = MAKE_INSTANCE([1.0, 0.0, -2.0, 0.0], nvars=4)
     assert "LinearExpression" in repr(expr)
     assert isinstance(str(expr), str)
+
+
+# ---------- batched (2-D) evaluate ----------
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_batched_evaluate_matches_looped_scalar(representation):
+    n = 4
+    coeffs = [1.0, 2.0, 3.0, 4.0]
+    expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
+
+    rng = np.random.default_rng(42)
+    x_batch = rng.random((5, n))
+
+    batched = expr.evaluate(x_batch)
+    looped = np.array([expr.evaluate(row) for row in x_batch])
+
+    assert isinstance(batched, np.ndarray)
+    assert batched.shape == (5,)
+    np.testing.assert_allclose(batched, looped)
+
+
+@pytest.mark.parametrize("representation", list(REPRESENTATION_TO_TYPE))
+def test_batched_evaluate_single_sample_matches_1d(representation):
+    n = 4
+    coeffs = [1.0, 2.0, 3.0, 4.0]
+    expr = MAKE_INSTANCE(coeffs, nvars=n, representation=representation)
+
+    x = np.array([0.5, 1.5, -1.0, 2.0])
+    batched = expr.evaluate(x.reshape(1, n))
+    assert batched.shape == (1,)
+    assert batched[0] == pytest.approx(expr.evaluate(x))
