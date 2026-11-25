@@ -16,16 +16,21 @@ Convert a problem with inequality constraints to unconstrained with penalty term
 """
 
 import logging
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
 from ..problems.constraint import Constraint, ConstraintSense
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
 
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class LinearInequalityToPenalty(OptimizationProblemConverter):
@@ -68,11 +73,11 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
                      every conversion.
         """
         self._src_num_vars: int | None = None
-        self._dst: OptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._penalty: float | None = penalty
         self._should_define_penalty: bool = penalty is None
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         r"""Convert inequality constraints into penalty terms of the objective function.
 
         This methods converts the following patterns where x, y, and :math:`x_i` are binary
@@ -99,9 +104,17 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
         Raises:
             OptimizationError: If an unsupported-type variable exists.
         """
+        if problem.is_multi_objective:
+            raise OptimizationError(
+                "MultiObjectiveProblem is not supported for LinearInequalityToPenalty. "
+                "In multi-objective optimization, constraints should not be folded as "
+                "penalties into existing objectives."
+            )
+
         # create empty OptimizationProblem model
         self._src_num_vars = problem.get_num_vars()
-        self._dst = OptimizationProblem(name=problem.name)
+        dst = problem._new_empty()
+        self._dst = dst
 
         # If no penalty was given, set the penalty coefficient by _auto_define_penalty()
         if self._should_define_penalty:
@@ -146,16 +159,9 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
             else:
                 raise OptimizationError(f"Unsupported vartype: {x.vartype}")
 
-        # get original objective terms
-        offset = problem.objective.constant
-        linear = problem.objective.linear.to_dict()
-        quadratic = problem.objective.quadratic.to_dict()
-        ho = {degree: expr.to_dict() for degree, expr in problem.objective.higher_order.items()}
-        sense = problem.objective.sense.value
-
-        # convert linear constraints into penalty terms
+        # Keep unmatched linear constraints
+        matched_constraints = []
         for constraint in problem.linear_constraints:
-            # special constraint check function here
             if not self._is_matched_constraint(problem, constraint):
                 self._dst.linear_constraint(
                     constraint.linear.coefficients,
@@ -163,33 +169,8 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
                     constraint.rhs,
                     constraint.name,
                 )
-                continue
-
-            conv_offset, conv_linear, conv_quadratic, varmap = self._conversion_table(constraint)
-
-            # constant part
-            offset += sense * penalty * conv_offset
-
-            # linear parts of penalty
-            for j, j_2 in varmap.items():
-                # if j already exists in the linear terms dic, add a penalty term
-                # into existing value else create new key and value in the linear_term dict
-
-                if conv_linear[j] != 0:
-                    linear[j_2] = linear.get(j_2, 0.0) + sense * penalty * conv_linear[j]
-
-            # quadratic parts of penalty
-            for j, j_2 in varmap.items():
-                for k in range(j, len(varmap)):
-                    # if j and k already exist in the quadratic terms dict,
-                    # add a penalty term into existing value
-                    # else create new key and value in the quadratic term dict
-
-                    if conv_quadratic[j][k] != 0:
-                        tup = (j_2, varmap[k])
-                        quadratic[tup] = (
-                            quadratic.get(tup, 0.0) + sense * penalty * conv_quadratic[j][k]
-                        )
+            else:
+                matched_constraints.append(constraint)
 
         # Copy quadratic_constraints
         for quadratic_constraint in problem.quadratic_constraints:
@@ -211,19 +192,50 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
                 ho_constraint.name,
             )
 
-        self._dst._append_or_set_objective_from_parts(
-            problem.objective.sense,
-            constant=offset,
-            linear=linear,
-            quadratic=quadratic,
-            higher_order=ho,  # type: ignore[arg-type]
-            name=problem.objective.name,
-        )
+        # Process each objective
+        for obj in problem.iter_objectives():
+            offset = obj.constant
+            linear = obj.linear.to_dict()
+            quadratic = obj.quadratic.to_dict()
+            ho = {degree: expr.to_dict() for degree, expr in obj.higher_order.items()}
+            sense = obj.sense.value
+
+            # convert matched linear constraints into penalty terms
+            for constraint in matched_constraints:
+                conv_offset, conv_linear, conv_quadratic, varmap = self._conversion_table(
+                    constraint
+                )
+
+                # constant part
+                offset += sense * penalty * conv_offset
+
+                # linear parts of penalty
+                for j, j_2 in varmap.items():
+                    if conv_linear[j] != 0:
+                        linear[j_2] = linear.get(j_2, 0.0) + sense * penalty * conv_linear[j]
+
+                # quadratic parts of penalty
+                for j, j_2 in varmap.items():
+                    for k in range(j, len(varmap)):
+                        if conv_quadratic[j][k] != 0:
+                            tup = (j_2, varmap[k])
+                            quadratic[tup] = (
+                                quadratic.get(tup, 0.0) + sense * penalty * conv_quadratic[j][k]
+                            )
+
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=offset,
+                linear=linear,
+                quadratic=quadratic,
+                higher_order=ho,  # type: ignore[arg-type]
+                name=obj.name,
+            )
 
         # Update the penalty to the one just used
         self._penalty = penalty
 
-        return self._dst
+        return dst
 
     @staticmethod
     def _conversion_table(
@@ -322,7 +334,7 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
         return False
 
     @staticmethod
-    def _auto_define_penalty(problem) -> float:
+    def _auto_define_penalty(problem: "BaseOptimizationProblem") -> float:
         """Automatically define the penalty coefficient.
 
         Returns:
@@ -349,11 +361,15 @@ class LinearInequalityToPenalty(OptimizationProblemConverter):
             )
             return default_penalty
 
-        lin_b = problem.objective.linear.bounds
-        quad_b = problem.objective.quadratic.bounds
-        return float(
-            1.0 + (lin_b.upperbound - lin_b.lowerbound) + (quad_b.upperbound - quad_b.lowerbound)
-        )
+        max_bound = 0.0
+        for obj in problem.iter_objectives():
+            lin_b = obj.linear.bounds
+            quad_b = obj.quadratic.bounds
+            span = (lin_b.upperbound - lin_b.lowerbound) + (quad_b.upperbound - quad_b.lowerbound)
+            if span > max_bound:
+                max_bound = span
+
+        return float(1.0 + max_bound)
 
     def interpret(self, x: np.ndarray | list[float]) -> np.ndarray:
         """Convert the result of the converted problem back to that of the original problem.

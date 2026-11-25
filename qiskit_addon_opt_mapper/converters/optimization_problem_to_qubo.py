@@ -12,12 +12,11 @@
 
 """A converter from optimization problem to a QUBO."""
 
-from typing import cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_problem import OptimizationProblem
 from .equality_to_penalty import EqualityToPenalty
 from .flip_problem_sense import MaximizeToMinimize
 from .inequality_to_equality import InequalityToEquality
@@ -25,6 +24,11 @@ from .integer_to_binary import IntegerToBinary
 from .linear_inequality_to_penalty import LinearInequalityToPenalty
 from .optimization_problem_converter import OptimizationProblemConverter
 from .spin_to_binary import SpinToBinary
+
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
 
 
 class OptimizationProblemToQubo(OptimizationProblemConverter):
@@ -68,7 +72,7 @@ class OptimizationProblemToQubo(OptimizationProblemConverter):
             MaximizeToMinimize(),
         ]
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert a optimization problem into a QUBO form.
 
         The new problem has no constraints and the objective function is quadratic.
@@ -109,7 +113,7 @@ class OptimizationProblemToQubo(OptimizationProblemConverter):
         return cast(np.ndarray, x)
 
     @staticmethod
-    def get_compatibility_msg(problem: OptimizationProblem) -> str:
+    def get_compatibility_msg(problem: "BaseOptimizationProblem") -> str:
         """Checks whether a given problem can be converted to a QUBO form.
 
         If the problem is not compatible, this function returns a message explaining
@@ -131,12 +135,16 @@ class OptimizationProblemToQubo(OptimizationProblemConverter):
         """
         # initialize message
         msg = ""
+        if problem.is_multi_objective:
+            msg += "MultiObjectiveProblem is not supported. "
         # check whether there are incompatible variable types
         if problem.get_num_continuous_vars() > 0:
             msg += "Continuous variables are not supported. "
         # check whether there are incompatible objective functions
-        if len(problem.objective.higher_order) > 0:
-            msg += "Higher order objective functions are not supported. "
+        for obj in problem.iter_objectives():
+            if len(obj.higher_order) > 0:
+                msg += "Higher order objective functions are not supported. "
+                break
         # check whether there are incompatible constraint types
         if len(problem.quadratic_constraints) > 0:
             msg += "Quadratic constraints are not supported. "
@@ -162,7 +170,7 @@ class OptimizationProblemToQubo(OptimizationProblemConverter):
         # if an error occurred, return error message, otherwise, return the empty string
         return msg
 
-    def is_compatible(self, problem: OptimizationProblem) -> bool:
+    def is_compatible(self, problem: "BaseOptimizationProblem") -> bool:
         """Checks whether a given problem can be solved with the optimizer implementing this method.
 
         Args:

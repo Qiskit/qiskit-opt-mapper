@@ -1,0 +1,20 @@
+---
+features:
+  - |
+    The structural converters
+    :class:`~qiskit_addon_opt_mapper.converters.BinaryToLinearBinary`,
+    :class:`~qiskit_addon_opt_mapper.converters.BinaryToSpin`,
+    :class:`~qiskit_addon_opt_mapper.converters.InequalityToEquality`,
+    :class:`~qiskit_addon_opt_mapper.converters.IntegerToBinary`,
+    :class:`~qiskit_addon_opt_mapper.converters.MaximizeToMinimize`,
+    :class:`~qiskit_addon_opt_mapper.converters.MinimizeToMaximize` and
+    :class:`~qiskit_addon_opt_mapper.converters.SpinToBinary`
+    now accept both :class:`~qiskit_addon_opt_mapper.OptimizationProblem` and
+    :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem`.
+    When given a :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem`, each converter
+    returns a :class:`~qiskit_addon_opt_mapper.MultiObjectiveProblem` with the converted
+    objectives in the same order, preserving their names and senses.
+fixes:
+  - |
+    :class:`~qiskit_addon_opt_mapper.converters.EqualityToPenalty` now preserves the problem name
+    instead of dropping it during conversion.

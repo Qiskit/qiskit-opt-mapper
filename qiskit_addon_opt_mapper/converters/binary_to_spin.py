@@ -13,11 +13,11 @@
 """Converter that converts all binary variables to spin variables."""
 
 import copy
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
 from ..exceptions import OptimizationError
-from ..problems.optimization_problem import OptimizationProblem
 from ..problems.variable import Variable
 from .optimization_problem_converter import OptimizationProblemConverter
 from .util import (
@@ -32,6 +32,11 @@ from .util import (
     _Subst,
 )
 
+if TYPE_CHECKING:
+    from ..problems.base_optimization_problem import BaseOptimizationProblem
+
+_T = TypeVar("_T", bound="BaseOptimizationProblem")
+
 
 class BinaryToSpin(OptimizationProblemConverter):
     """Convert all binary variables in the problem to spin variables.
@@ -45,19 +50,20 @@ class BinaryToSpin(OptimizationProblemConverter):
 
     def __init__(self) -> None:
         """Initialize converter."""
-        self._src: OptimizationProblem | None = None
-        self._dst: OptimizationProblem | None = None
+        self._src: BaseOptimizationProblem | None = None
+        self._dst: BaseOptimizationProblem | None = None
         self._b2s: dict[str, str] = {}  # original binary name -> new spin name
         self._subst: dict[str, _Subst] = {}  # name -> (const, coeff, spin_name)
         self._src_num_vars: int | None = None
 
     # ---- public API ----
 
-    def convert(self, problem: OptimizationProblem) -> OptimizationProblem:
+    def convert(self, problem: _T) -> _T:
         """Convert all binary variables in the problem to spin variables."""
         self._src = copy.deepcopy(problem)
         self._src_num_vars = problem.get_num_vars()
-        self._dst = OptimizationProblem(name=problem.name)
+        dst = problem._new_empty()
+        self._dst = dst
 
         # 1) variables: create spins for binaries, copy others as-is
         for x in self._src.variables:
@@ -107,7 +113,7 @@ class BinaryToSpin(OptimizationProblemConverter):
         self._convert_quadratic_constraints()
         self._convert_higher_order_constraints()
 
-        return self._dst
+        return dst
 
     def interpret(self, x: np.ndarray | list[float]) -> np.ndarray:
         """Convert a solution of the converted problem back to a solution of the original problem.
@@ -175,33 +181,33 @@ class BinaryToSpin(OptimizationProblemConverter):
     def _convert_objective(self) -> None:
         """Convert the objective of the source problem and set it to the destination problem."""
         assert self._dst is not None and self._src is not None
-        obj = self._src.objective
-        # Build polynomial f from original objective
-        f: Poly = {}
-        _poly_add(f, _poly_from_linear(obj.linear))
-        _poly_add(f, _poly_from_quadratic(obj.quadratic))
-        # higher order (if any)
-        if obj.higher_order:
-            # obj.higher_order: dict[int, Expr], each Expr.to_dict(use_name=True)
-            for _, expr in obj.higher_order.items():
-                for names, coef in expr.to_dict(use_name=True).items():
-                    if coef != 0.0:
-                        _poly_add(f, {tuple(names): float(coef)})  # type: ignore
+        for obj in self._src.iter_objectives():
+            # Build polynomial f from original objective
+            f: Poly = {}
+            _poly_add(f, _poly_from_linear(obj.linear))
+            _poly_add(f, _poly_from_quadratic(obj.quadratic))
+            # higher order (if any)
+            if obj.higher_order:
+                # obj.higher_order: dict[int, Expr], each Expr.to_dict(use_name=True)
+                for _, expr in obj.higher_order.items():
+                    for names, coef in expr.to_dict(use_name=True).items():
+                        if coef != 0.0:
+                            _poly_add(f, {tuple(names): float(coef)})  # type: ignore
 
-        # Apply substitution
-        g = self._apply_b2s_subst(f)
-        c0, ldict, qdict, hdict = _poly_split(g)
-        c0 += obj.constant
+            # Apply substitution
+            g = self._apply_b2s_subst(f)
+            c0, ldict, qdict, hdict = _poly_split(g)
+            c0 += obj.constant
 
-        # Dump to dst objective
-        self._dst._append_or_set_objective_from_parts(
-            obj.sense,
-            constant=c0,
-            linear=ldict,
-            quadratic=qdict,
-            higher_order=hdict,
-            name=obj.name,
-        )
+            # Dump to dst objective
+            self._dst._append_or_set_objective_from_parts(
+                obj.sense,
+                constant=c0,
+                linear=ldict,
+                quadratic=qdict,
+                higher_order=hdict,
+                name=obj.name,
+            )
 
     def _emit_constraint_from_poly(self, name: str, sense, rhs: float, poly: Poly) -> None:
         """Emit a constraint to the destination problem from a polynomial form."""
