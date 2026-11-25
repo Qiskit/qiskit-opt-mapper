@@ -23,11 +23,28 @@ from qiskit_addon_opt_mapper.problems import (
     Constraint,
     ObjSense,
     OptimizationObjective,
+    Representation,
     Variable,
     VarType,
 )
+from scipy.sparse import coo_array, csc_array, csr_array, dok_array
 
 from ..optimization_test_case import OptimizationTestCase
+
+LINEAR_REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+}
+
+QUADRATIC_REPRESENTATION_TO_TYPE = {
+    Representation.DENSE: np.ndarray,
+    Representation.COO: coo_array,
+    Representation.DOK: dok_array,
+    Representation.CSR: csr_array,
+    Representation.CSC: csc_array,
+}
 
 
 @pytest.fixture
@@ -208,6 +225,100 @@ def test_prettyprint_with_higher_orders(op3):
     # The exact formatting may vary; check key phrases exist
     assert "Minimize" in s
     assert "Higher-order constraints" in s
+
+
+def test_higher_order_constraint_without_higher_order_arg_no_unbound_local_error(op3):
+    """higher_order_constraint() with no higher_order kwarg must not raise UnboundLocalError.
+
+    Previously `con` was only assigned inside `if higher_order is not None:` but used
+    unconditionally afterward, crashing on the (default) omitted-kwarg path.
+    """
+    con = op3.higher_order_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=5.0)
+    assert con.higher_order == {}
+    x = [1.0, 1.0, 1.0]
+    assert con.evaluate(x) == 1.0 + 2.0
+
+
+@pytest.mark.parametrize("representation", list(LINEAR_REPRESENTATION_TO_TYPE))
+def test_linear_constraint_representation_kwarg_honored(op3, representation):
+    """linear_constraint()'s representation kwarg is forwarded to the LinearExpression."""
+    con = op3.linear_constraint(linear={0: 1.0}, rhs=1.0, representation=representation)
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[representation])
+
+
+def test_linear_constraint_representation_defaults_to_dense(op3):
+    """Omitting linear_constraint()'s representation kwarg defaults to DENSE."""
+    con = op3.linear_constraint(linear={0: 1.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+def test_quadratic_constraint_representation_kwargs_honored(op3, linear_rep, quadratic_rep):
+    """quadratic_constraint()'s representation kwargs are forwarded to each expression."""
+    con = op3.quadratic_constraint(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        rhs=1.0,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(con.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep])
+
+
+def test_quadratic_constraint_representation_defaults_to_dense(op3):
+    """Omitting quadratic_constraint()'s representation kwargs defaults to DENSE."""
+    con = op3.quadratic_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+    assert isinstance(con.quadratic.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+def test_higher_order_constraint_representation_kwargs_honored(op3, linear_rep, quadratic_rep):
+    """higher_order_constraint()'s representation kwargs are forwarded to each expression."""
+    con = op3.higher_order_constraint(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        rhs=1.0,
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(con.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(con.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep])
+
+
+def test_higher_order_constraint_representation_defaults_to_dense(op3):
+    """Omitting higher_order_constraint()'s representation kwargs defaults to DENSE."""
+    con = op3.higher_order_constraint(linear={0: 1.0}, quadratic={(1, 2): 2.0}, rhs=1.0)
+    assert isinstance(con.linear.coefficients, np.ndarray)
+    assert isinstance(con.quadratic.coefficients, np.ndarray)
+
+
+@pytest.mark.parametrize("linear_rep", list(LINEAR_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("quadratic_rep", list(QUADRATIC_REPRESENTATION_TO_TYPE))
+@pytest.mark.parametrize("factory", ["minimize", "maximize"])
+def test_minimize_maximize_representation_kwargs_honored(op3, linear_rep, quadratic_rep, factory):
+    """minimize()/maximize()'s representation kwargs are forwarded to the objective."""
+    getattr(op3, factory)(
+        linear={0: 1.0},
+        quadratic={(1, 2): 2.0},
+        linear_representation=linear_rep,
+        quadratic_representation=quadratic_rep,
+    )
+    assert isinstance(op3.objective.linear.coefficients, LINEAR_REPRESENTATION_TO_TYPE[linear_rep])
+    assert isinstance(
+        op3.objective.quadratic.coefficients, QUADRATIC_REPRESENTATION_TO_TYPE[quadratic_rep]
+    )
+
+
+@pytest.mark.parametrize("factory", ["minimize", "maximize"])
+def test_minimize_maximize_representation_defaults_to_dense(op3, factory):
+    """Omitting minimize()/maximize()'s representation kwargs defaults to DENSE."""
+    getattr(op3, factory)(linear={0: 1.0}, quadratic={(1, 2): 2.0})
+    assert isinstance(op3.objective.linear.coefficients, np.ndarray)
+    assert isinstance(op3.objective.quadratic.coefficients, np.ndarray)
 
 
 class TestOptimizationProblem(OptimizationTestCase):
