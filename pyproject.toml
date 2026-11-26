@@ -42,9 +42,10 @@ cplex = ["cplex; python_version < '3.15'"]
 cvx = ["cvxpy"]
 matplotlib = ["matplotlib"]
 gurobi = ["gurobipy"]
+numba = ["numba"]
 
 dynamic = [
-    "qiskit-addon-opt-mapper[cplex,cvx,matplotlib,gurobi]",
+    "qiskit-addon-opt-mapper[cplex,cvx,matplotlib,gurobi,numba]",
 ]
 dev = [
     "qiskit-addon-opt-mapper[test,doctest,nbtest,lint,docs]",
