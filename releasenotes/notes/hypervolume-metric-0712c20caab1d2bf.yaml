@@ -1,0 +1,19 @@
+---
+features:
+  - |
+    Added :func:`~qiskit_addon_opt_mapper.metrics.hypervolume` in the new
+    :mod:`qiskit_addon_opt_mapper.metrics` package. It computes the hypervolume indicator of a set
+    of objective values, given as an array of shape ``(n_points, n_objectives)``, an optional
+    reference point and the sense of each objective (``sense="min"``, ``sense="max"`` or an
+    :class:`~qiskit_addon_opt_mapper.problems.ObjSense`, for all objectives or one per objective).
+    Any set of points is accepted: dominated points do not change the value. Without a reference
+    point, the worst value of each objective is used, so pass the same reference point to every
+    call when you compare sets. The function needs no problem and no solver, so a quantum run can
+    be compared with a classical benchmark using arrays alone. Points outside the reference point
+    are excluded with a warning, or raise ``ValueError`` when ``exclude_outside_reference=False``.
+  - |
+    For two or three objectives, the hypervolume uses a built-in NumPy implementation. For four or
+    more objectives, it uses a compiled version of the same algorithm when ``numba`` is installed
+    (``pip install 'qiskit-addon-opt-mapper[numba]'``). Without ``numba``, the NumPy
+    implementation is used for any number of objectives, and it is slow for four or more.
+    ``numba`` is imported on first use only.

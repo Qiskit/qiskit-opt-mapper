@@ -7,6 +7,7 @@
 
    qiskit_addon_opt_mapper.applications
    qiskit_addon_opt_mapper.converters
+   qiskit_addon_opt_mapper.metrics
    qiskit_addon_opt_mapper.problems
    qiskit_addon_opt_mapper.solvers
    qiskit_addon_opt_mapper.translators

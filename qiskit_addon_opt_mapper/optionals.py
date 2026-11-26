@@ -45,3 +45,11 @@ HAS_MATPLOTLIB = LazyImportTester(
     name="Matplotlib",
     install="pip install 'qiskit-addon-opt-mapper[matplotlib]'",
 )
+
+HAS_NUMBA = LazyImportTester(
+    {
+        "numba": ("njit",),
+    },
+    name="Numba",
+    install="pip install 'qiskit-addon-opt-mapper[numba]'",
+)
